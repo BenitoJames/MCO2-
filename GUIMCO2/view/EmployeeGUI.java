@@ -1,11 +1,10 @@
 package view;
 
 import controller.StoreControllerGUI;
-import model.*;
-
-import javax.swing.*;
 import java.awt.*;
 import java.util.List;
+import javax.swing.*;
+import model.*;
 
 /**
  * Employee management interface.
@@ -189,14 +188,14 @@ public class EmployeeGUI extends JPanel {
     }
     
     private void displayExpiringItems() {
-        List<PerishableProduct> expiring = inventory.getExpiringItems();
+        List<Product> expiring = inventory.getExpiringItems();
         StringBuilder sb = new StringBuilder();
         sb.append("=== EXPIRING ITEMS ===\n\n");
         
         if (expiring.isEmpty()) {
             sb.append("No expiring items.");
         } else {
-            for (PerishableProduct p : expiring) {
+            for (Product p : expiring) {
                 sb.append(p.displayDetails()).append("\n");
             }
             
@@ -206,7 +205,7 @@ public class EmployeeGUI extends JPanel {
                 JOptionPane.YES_NO_OPTION);
             
             if (confirm == JOptionPane.YES_OPTION) {
-                List<PerishableProduct> removed = inventory.removeExpiringItems();
+                List<Product> removed = inventory.removeExpiringItems();
                 sb.append("\n\nRemoved ").append(removed.size()).append(" item(s).");
                 controller.saveInventoryChanges();
             }

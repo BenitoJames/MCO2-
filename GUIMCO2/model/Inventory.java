@@ -76,7 +76,7 @@ public class Inventory {
         return lowStockItems;
     }
 
-    /**
+   /**
      * Gets a list of all perishable items that are expiring soon or expired.
      *
      * @return (List<Product>) A list of expiring products.
@@ -94,7 +94,7 @@ public class Inventory {
     public List<Product> removeExpiringItems() {
         // Only the perishable shelf can have expiring items
         return this.perishableShelf.removeExpiringItems();
-    }
+    } 
 
     /**
      * Gathers all products from both shelves into a single list.

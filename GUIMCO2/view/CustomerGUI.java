@@ -1,13 +1,11 @@
 package view;
 
 import controller.StoreControllerGUI;
-import model.*;
-
-import javax.swing.*;
-import javax.swing.border.*;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.*;
+import model.*;
 
 /**
  * Customer shopping interface.
