@@ -1,22 +1,30 @@
 package view;
 
-import model.*;
-
-import javax.swing.*;
 import java.awt.*;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.regex.Pattern;
+import javax.swing.*;
+import model.*;
+import util.StoreDataHandler;
 
 /**
  * Dialog for handling payment during checkout.
+ * Flow: Senior/PWD → Membership → Order Summary → Payment
  */
 public class PaymentDialog extends JDialog {
     private final Transaction transaction;
-    private final Customer customer;
+    private Customer customer;
+    private final StoreDataHandler dataHandler;
+    private final List<Customer> customerList;
     private boolean transactionCompleted = false;
     
-    private JLabel totalLabel;
-    private JTextField pointsField;
-    private JComboBox<String> paymentMethodCombo;
-    private JTextField amountField;
+    private boolean isSenior = false;
+    private double membershipFee = 0.0;
+    private double subtotal = 0.0;
+    private double vat = 0.0;
+    private double seniorDiscount = 0.0;
+    private double totalDue = 0.0;
     
     /**
      * Constructs a payment dialog.
@@ -24,15 +32,19 @@ public class PaymentDialog extends JDialog {
      * @param parent The parent window
      * @param transaction The transaction to process
      * @param customer The customer making the purchase
+     * @param dataHandler The data handler for saving
+     * @param customerList The list of all customers
      */
-    public PaymentDialog(Window parent, Transaction transaction, Customer customer) {
+    public class PaymentDialog(Window parent, Transaction transaction, Customer customer,
+                        StoreDataHandler dataHandler, List<Customer> customerList) {
         super(parent, "Checkout", ModalityType.APPLICATION_MODAL);
         this.transaction = transaction;
         this.customer = customer;
+        this.dataHandler = dataHandler;
+        this.customerList = customerList;
         
-        setupUI();
-        setSize(500, 600);
-        setLocationRelativeTo(parent);
+        // Run checkout flow
+        runCheckoutFlow();
     }
     
     /**
@@ -58,14 +70,24 @@ public class PaymentDialog extends JDialog {
         centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
         centerPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         
+        // Membership card purchase option (if signed in without card)
+        if (!customer.isGuest() && !customer.hasMembership()) {
+            centerPanel.add(createMembershipPurchasePanel());
+            centerPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+        }
+        
+        // Senior/PWD discount option
+        centerPanel.add(createSeniorPWDPanel());
+        centerPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+        
         // Transaction summary
         centerPanel.add(createSummaryPanel());
-        centerPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        centerPanel.add(Box.createRigidArea(new Dimension(0, 15)));
         
-        // Points redemption (if member)
+        // Points info (if member)
         if (customer.hasMembership()) {
-            centerPanel.add(createPointsPanel());
-            centerPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+            centerPanel.add(createPointsInfoPanel());
+            centerPanel.add(Box.createRigidArea(new Dimension(0, 15)));
         }
         
         // Payment details
@@ -76,6 +98,118 @@ public class PaymentDialog extends JDialog {
         
         // Bottom buttons
         add(createButtonPanel(), BorderLayout.SOUTH);
+    }
+    
+    /**
+     * Creates the membership card purchase panel.
+     */
+    private JPanel createMembershipPurchasePanel() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createTitledBorder("Membership Card"));
+        panel.setBackground(new Color(255, 255, 220));
+        
+        JLabel infoLabel = new JLabel("<html>You don't have a membership card yet!<br>" +
+            "Purchase one now to earn points and get exclusive benefits.</html>");
+        infoLabel.setFont(new Font("Arial", Font.PLAIN, 13));
+        panel.add(infoLabel, BorderLayout.CENTER);
+        
+        membershipBtn = new JButton("Purchase Card (₱50.00)");
+        membershipBtn.setBackground(new Color(70, 130, 180));
+        membershipBtn.setForeground(Color.WHITE);
+        membershipBtn.setFocusPainted(false);
+        membershipBtn.addActionListener(e -> handleMembershipPurchase());
+        panel.add(membershipBtn, BorderLayout.EAST);
+        
+        return panel;
+    }
+    
+    /**
+     * Creates the Senior/PWD discount panel.
+     */
+    private JPanel createSeniorPWDPanel() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createTitledBorder("Senior Citizen / PWD Discount"));
+        
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        seniorPWDCheckbox = new JCheckBox("I am a Senior Citizen or PWD");
+        seniorPWDCheckbox.addActionListener(e -> toggleSeniorPWDFields());
+        topPanel.add(seniorPWDCheckbox);
+        panel.add(topPanel, BorderLayout.NORTH);
+        
+        JPanel cardPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        cardPanel.add(new JLabel("Card ID:"));
+        seniorPWDCardField = new JTextField(15);
+        seniorPWDCardField.setEnabled(false);
+        cardPanel.add(seniorPWDCardField);
+        
+        JButton applyBtn = new JButton("Apply Discount");
+        applyBtn.setEnabled(false);
+        applyBtn.addActionListener(e -> applySeniorPWDDiscount());
+        cardPanel.add(applyBtn);
+        
+        seniorPWDCheckbox.addActionListener(e -> applyBtn.setEnabled(seniorPWDCheckbox.isSelected()));
+        
+        panel.add(cardPanel, BorderLayout.CENTER);
+        
+        return panel;
+    }
+    
+    private void toggleSeniorPWDFields() {
+        boolean enabled = seniorPWDCheckbox.isSelected();
+        seniorPWDCardField.setEnabled(enabled);
+        if (!enabled) {
+            seniorPWDCardField.setText("");
+            // Revert discount if unchecked
+            if (seniorPWDApplied) {
+                seniorPWDApplied = false;
+                recalculateTotal();
+            }
+        }
+    }
+    
+    private void applySeniorPWDDiscount() {
+        if (seniorPWDApplied) {
+            JOptionPane.showMessageDialog(this,
+                "Senior/PWD discount already applied!",
+                "Already Applied",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        String cardID = seniorPWDCardField.getText().trim().toUpperCase();
+        
+        if (cardID.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                "Please enter your Senior/PWD Card ID.",
+                "Missing Card ID",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // Validate format: SRC-XXXX or PWD-XXXX
+        if (!Pattern.matches("^(SRC|PWD)-\\d{4}$", cardID)) {
+            JOptionPane.showMessageDialog(this,
+                "Invalid Card ID format!\nMust be SRC-#### or PWD-#### (e.g., SRC-1234)",
+                "Invalid Format",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        seniorPWDApplied = true;
+        transaction.setSeniorPWDCardID(cardID);
+        recalculateTotal();
+        
+        JOptionPane.showMessageDialog(this,
+            "Senior/PWD discount applied!\nVAT removed and 20% discount applied.",
+            "Discount Applied",
+            JOptionPane.INFORMATION_MESSAGE);
+    }
+    
+    private void recalculateTotal() {
+        // Recalculate transaction with Senior/PWD discount
+        transaction.calculateTotals(seniorPWDApplied);
+        updateSummaryDisplay();
+        updatePointsDisplay();
     }
     
     /**
@@ -100,33 +234,89 @@ public class PaymentDialog extends JDialog {
     }
     
     /**
-     * Creates the points redemption panel.
+     * Creates the points information panel for members.
      */
-    private JPanel createPointsPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createTitledBorder("Redeem Points"));
+    private JPanel createPointsInfoPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(BorderFactory.createTitledBorder("Membership Points"));
         
-        int availablePoints = customer.getMembershipCard().getPoints();
-        JLabel pointsLabel = new JLabel("Available Points: " + availablePoints);
-        pointsLabel.setFont(new Font("Arial", Font.PLAIN, 14));
-        panel.add(pointsLabel, BorderLayout.NORTH);
+        // Current points
+        JPanel currentPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        currentPointsLabel = new JLabel("Current Points: " + customer.getPoints());
+        currentPointsLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        currentPanel.add(currentPointsLabel);
+        panel.add(currentPanel);
         
-        JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        inputPanel.add(new JLabel("Points to use:"));
+        // Points to earn
+        int pointsToEarn = (int) Math.floor(transaction.getFinalTotal() / 50.0);
+        JPanel earnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        pointsToEarnLabel = new JLabel("Points to Earn: " + pointsToEarn + 
+            " (₱" + String.format("%.2f", transaction.getFinalTotal()) + " ÷ 50)");
+        pointsToEarnLabel.setFont(new Font("Arial", Font.PLAIN, 13));
+        pointsToEarnLabel.setForeground(new Color(0, 100, 0));
+        earnPanel.add(pointsToEarnLabel);
+        panel.add(earnPanel);
         
-        pointsField = new JTextField(10);
+        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        
+        // Points redemption
+        JPanel redeemPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        redeemPanel.add(new JLabel("Use Points (1 point = ₱1):"));
+        pointsField = new JTextField(8);
         pointsField.setText("0");
-        inputPanel.add(pointsField);
+        redeemPanel.add(pointsField);
         
-        JButton applyButton = new JButton("Apply");
-        applyButton.addActionListener(e -> applyPoints());
-        inputPanel.add(applyButton);
+        JButton applyBtn = new JButton("Apply");
+        applyBtn.addActionListener(e -> applyPoints());
+        redeemPanel.add(applyBtn);
         
-        panel.add(inputPanel, BorderLayout.CENTER);
+        panel.add(redeemPanel);
         
         return panel;
     }
     
+    private void handleMembershipPurchase() {
+        MembershipCardPurchaseDialog dialog = new MembershipCardPurchaseDialog(
+            (Frame) SwingUtilities.getWindowAncestor(this),
+            customer, dataHandler, customerList);
+        dialog.setVisible(true);
+        
+        if (dialog.isPurchaseCompleted()) {
+            membershipCardCost = dialog.getCardCost();
+            membershipBtn.setEnabled(false);
+            membershipBtn.setText("Card Purchased ✓");
+            
+            // Refresh UI to show points panel
+            Container parent = membershipBtn.getParent().getParent().getParent();
+            if (parent instanceof JPanel) {
+                setupUI(); // Rebuild UI with points panel
+                revalidate();
+                repaint();
+            }
+            
+            JOptionPane.showMessageDialog(this,
+                "Membership card purchased successfully!\nYou can now earn and redeem points.",
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+    
+    private void updateSummaryDisplay() {
+        totalLabel.setText("TOTAL DUE: ₱" + String.format("%.2f", transaction.getFinalTotal()));
+    }
+    
+    private void updatePointsDisplay() {
+        if (customer.hasMembership() && pointsToEarnLabel != null) {
+            int pointsToEarn = (int) Math.floor(transaction.getFinalTotal() / 50.0);
+            pointsToEarnLabel.setText("Points to Earn: " + pointsToEarn + 
+                " (₱" + String.format("%.2f", transaction.getFinalTotal()) + " ÷ 50)");
+        }
+    }
+    
+    /**
+     * Creates the points redemption panel.
+     */
     /**
      * Creates the payment details panel.
      */
@@ -176,7 +366,7 @@ public class PaymentDialog extends JDialog {
     private void applyPoints() {
         try {
             int pointsToUse = Integer.parseInt(pointsField.getText());
-            int availablePoints = customer.getMembershipCard().getPoints();
+            int availablePoints = customer.getPoints();
             
             if (pointsToUse < 0) {
                 JOptionPane.showMessageDialog(this,
@@ -194,11 +384,27 @@ public class PaymentDialog extends JDialog {
                 return;
             }
             
-            double newTotal = transaction.redeemPoints(pointsToUse);
-            totalLabel.setText("TOTAL DUE: ₱" + String.format("%.2f", newTotal));
+            // 1 point = ₱1 discount
+            double discount = customer.usePoints(pointsToUse);
+            
+            // Ensure discount doesn't exceed the total
+            if (discount > transaction.getFinalTotal()) {
+                int excessPoints = (int) (discount - transaction.getFinalTotal());
+                customer.refundPoints(excessPoints);
+                discount = transaction.getFinalTotal();
+                pointsToUse -= excessPoints;
+            }
+            
+            // Update transaction with points discount
+            transaction.setPointsDiscount(discount);
+            transaction.setPointsRedeemed(pointsToUse);
+            
+            updateSummaryDisplay();
+            currentPointsLabel.setText("Current Points: " + customer.getPoints() + 
+                " (after redemption: " + (customer.getPoints() + pointsToUse) + " - " + pointsToUse + " used)");
             
             JOptionPane.showMessageDialog(this,
-                "Points applied! New total: ₱" + String.format("%.2f", newTotal),
+                "Points applied! Discount: ₱" + String.format("%.2f", discount),
                 "Success",
                 JOptionPane.INFORMATION_MESSAGE);
             
@@ -215,22 +421,56 @@ public class PaymentDialog extends JDialog {
      */
     private void processPayment() {
         try {
-            double amountPaid = Double.parseDouble(amountField.getText());
             String paymentMethod = (String) paymentMethodCombo.getSelectedItem();
             
-            double change = transaction.processPayment(amountPaid, paymentMethod);
+            // If Card payment, validate card details first
+            if ("Card".equals(paymentMethod)) {
+                CardPaymentDialog cardDialog = new CardPaymentDialog(this);
+                cardDialog.setVisible(true);
+                
+                if (!cardDialog.isValidated()) {
+                    JOptionPane.showMessageDialog(this,
+                        "Card validation required to proceed.",
+                        "Payment Cancelled",
+                        JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            }
             
-            if (change < 0) {
+            double amountPaid = Double.parseDouble(amountField.getText());
+            double totalDue = transaction.getFinalTotal() + membershipCardCost;
+            
+            if (amountPaid < totalDue) {
                 JOptionPane.showMessageDialog(this,
-                    "Insufficient payment!\nTotal due: ₱" + 
-                    String.format("%.2f", transaction.getFinalTotal()),
+                    "Insufficient payment!\nTotal due: ₱" + String.format("%.2f", totalDue),
                     "Payment Error",
                     JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
+            double change = amountPaid - totalDue;
+            transaction.setPaymentMethod(paymentMethod);
+            transaction.setAmountPaid(amountPaid);
+            transaction.setChange(change);
+            
+            // Apply points earned
+            if (customer.hasMembership()) {
+                customer.earnPoints(transaction.getFinalTotal());
+            }
+            
+            // Save customer data
+            dataHandler.saveCustomers(customerList);
+            
             // Show receipt
-            JTextArea receiptArea = new JTextArea(transaction.getReceiptString());
+            String receiptText = transaction.getReceiptString();
+            if (membershipCardCost > 0) {
+                receiptText += "\n\n--- Membership Card Purchase ---\n";
+                receiptText += "Card Cost: ₱" + String.format("%.2f", membershipCardCost) + "\n";
+                receiptText += "Total Paid: ₱" + String.format("%.2f", totalDue) + "\n";
+            }
+            receiptText += "\nChange: ₱" + String.format("%.2f", change);
+            
+            JTextArea receiptArea = new JTextArea(receiptText);
             receiptArea.setEditable(false);
             receiptArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
             
