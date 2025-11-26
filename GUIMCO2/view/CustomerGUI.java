@@ -439,10 +439,45 @@ public class CustomerGUI extends JPanel {
         nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         infoPanel.add(nameLabel);
         
-        JLabel priceLabel = new JLabel("₱" + String.format("%.2f", product.getPrice()));
-        priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
-        priceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoPanel.add(priceLabel);
+        // Check if product has active sale
+        SaleManager saleManager = controller.getSaleManager();
+        ProductSale sale = saleManager.getBestSaleForProduct(product);
+        
+        if (sale != null) {
+            // Show original price with strikethrough
+            double originalPrice = product.getPrice();
+            double discountedPrice = sale.calculateDiscountedPrice(originalPrice);
+            
+            JPanel pricePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+            pricePanel.setBackground(Color.WHITE);
+            pricePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            
+            JLabel originalPriceLabel = new JLabel("<html><strike>₱" + String.format("%.2f", originalPrice) + "</strike></html>");
+            originalPriceLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+            originalPriceLabel.setForeground(Color.GRAY);
+            pricePanel.add(originalPriceLabel);
+            
+            JLabel discountedPriceLabel = new JLabel("₱" + String.format("%.2f", discountedPrice));
+            discountedPriceLabel.setFont(new Font("Arial", Font.BOLD, 13));
+            discountedPriceLabel.setForeground(new Color(220, 53, 69));
+            pricePanel.add(discountedPriceLabel);
+            
+            JLabel saleLabel = new JLabel("SALE!");
+            saleLabel.setFont(new Font("Arial", Font.BOLD, 10));
+            saleLabel.setForeground(Color.WHITE);
+            saleLabel.setBackground(new Color(220, 53, 69));
+            saleLabel.setOpaque(true);
+            saleLabel.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5));
+            pricePanel.add(saleLabel);
+            
+            infoPanel.add(pricePanel);
+        } else {
+            // Show regular price
+            JLabel priceLabel = new JLabel("₱" + String.format("%.2f", product.getPrice()));
+            priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+            priceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            infoPanel.add(priceLabel);
+        }
         
         // Brand
         String brand = product.getBrand();
@@ -603,9 +638,12 @@ public class CustomerGUI extends JPanel {
     private void updateCartSummary() {
         int totalItems = 0;
         double total = 0.0;
+        SaleManager saleManager = controller.getSaleManager();
+        
         for (CartItem ci : shoppingCart) {
             totalItems += ci.getQuantity();
-            total += ci.getQuantity() * ci.getProduct().getPrice();
+            double price = saleManager.getDiscountedPrice(ci.getProduct());
+            total += ci.getQuantity() * price;
         }
         if (cartItemCountLabel != null) {
             cartItemCountLabel.setText("Items: " + totalItems);
@@ -638,6 +676,9 @@ public class CustomerGUI extends JPanel {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             CartItem ci = cart.get(rowIndex);
+            SaleManager saleManager = controller.getSaleManager();
+            double price = saleManager.getDiscountedPrice(ci.getProduct());
+            
             if (columnIndex == 0) return ci.getProduct().getProductID();
             if (columnIndex == 1) return ci.getProduct().getName();
             if (columnIndex == 2) {
@@ -646,9 +687,9 @@ public class CustomerGUI extends JPanel {
                 int dash = id.indexOf('-');
                 return (dash > 0) ? id.substring(0, dash) : "";
             }
-            if (columnIndex == 3) return currencyFmt.format(ci.getProduct().getPrice());
+            if (columnIndex == 3) return currencyFmt.format(price);
             if (columnIndex == 4) return ci.getQuantity();
-            if (columnIndex == 5) return currencyFmt.format(ci.getProduct().getPrice() * ci.getQuantity());
+            if (columnIndex == 5) return currencyFmt.format(price * ci.getQuantity());
             return "";
         }
 
@@ -771,7 +812,8 @@ public class CustomerGUI extends JPanel {
             transaction,
             customer,
             controller.getDataHandler(),
-            controller.getCustomerList()
+            controller.getCustomerList(),
+            controller.getSaleManager()
         );
         dialog.setVisible(true);
         

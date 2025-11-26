@@ -17,11 +17,13 @@ public class PaymentDialog extends JDialog {
     private Customer customer;
     private final StoreDataHandler dataHandler;
     private final List<Customer> customerList;
+    private final SaleManager saleManager;
     private boolean transactionCompleted = false;
     
     private boolean isSenior = false;
     private double membershipFee = 0.0;
     private double subtotal = 0.0;
+    private double productSaleDiscount = 0.0;
     private double vat = 0.0;
     private double seniorDiscount = 0.0;
     private double totalDue = 0.0;
@@ -31,12 +33,13 @@ public class PaymentDialog extends JDialog {
      * Constructs a payment dialog and runs the checkout flow.
      */
     public PaymentDialog(Window parent, Transaction transaction, Customer customer,
-                        StoreDataHandler dataHandler, List<Customer> customerList) {
+                        StoreDataHandler dataHandler, List<Customer> customerList, SaleManager saleManager) {
         super(parent, "Checkout", ModalityType.APPLICATION_MODAL);
         this.transaction = transaction;
         this.customer = customer;
         this.dataHandler = dataHandler;
         this.customerList = customerList;
+        this.saleManager = saleManager;
         
         // Run checkout flow immediately
         if (runCheckoutFlow()) {
@@ -311,11 +314,24 @@ public class PaymentDialog extends JDialog {
      * Step 3: Calculate Order Summary.
      */
     private void calculateOrderSummary() {
-        // Use transaction's calculate method with senior/PWD flag
-        transaction.calculateTotals(isSenior);
+        // Calculate subtotal with original prices
+        double originalSubtotal = 0.0;
+        for (CartItem item : transaction.getCartItems()) {
+            originalSubtotal += item.getProduct().getPrice() * item.getQuantity();
+        }
         
-        // Get subtotal from transaction
-        subtotal = transaction.getSubtotal();
+        // Calculate subtotal with discounted prices
+        double discountedSubtotal = 0.0;
+        for (CartItem item : transaction.getCartItems()) {
+            double price = saleManager.getDiscountedPrice(item.getProduct());
+            discountedSubtotal += price * item.getQuantity();
+        }
+        
+        // Product sale discount is the difference
+        productSaleDiscount = originalSubtotal - discountedSubtotal;
+        
+        // Use discounted subtotal for calculations
+        subtotal = discountedSubtotal;
         
         // Calculate VAT (12%)
         vat = subtotal * 0.12;
@@ -339,6 +355,11 @@ public class PaymentDialog extends JDialog {
         StringBuilder summary = new StringBuilder();
         summary.append("========== ORDER SUMMARY ==========\n\n");
         summary.append(String.format("Subtotal:                ₱%.2f\n", subtotal));
+        
+        if (productSaleDiscount > 0) {
+            summary.append(String.format("Product Sale Discount:  -₱%.2f\n", productSaleDiscount));
+        }
+        
         summary.append(String.format("VAT (12%%):               ₱%.2f\n", vat));
         
         if (isSenior) {
@@ -702,16 +723,32 @@ public class PaymentDialog extends JDialog {
         receipt.append("ITEMS PURCHASED\n");
         receipt.append("----------------------------------------\n");
         
-        // Print all items from transaction
+        // Print all items from transaction with original and discounted prices
         for (CartItem item : transaction.getCartItems()) {
-            receipt.append(String.format("%-20s x%d  ₱%.2f\n", 
-                item.getProduct().getName(), 
-                item.getQuantity(),
-                item.getProduct().getPrice() * item.getQuantity()));
+            Product product = item.getProduct();
+            double originalPrice = product.getPrice();
+            double discountedPrice = saleManager.getDiscountedPrice(product);
+            int qty = item.getQuantity();
+            
+            if (discountedPrice < originalPrice) {
+                // Item is on sale - show both prices
+                receipt.append(String.format("%-20s x%d\n", product.getName(), qty));
+                receipt.append(String.format("  ₱%.2f → ₱%.2f ea     ₱%.2f\n", 
+                    originalPrice, discountedPrice, discountedPrice * qty));
+            } else {
+                // Regular price
+                receipt.append(String.format("%-20s x%d  ₱%.2f\n", 
+                    product.getName(), qty, originalPrice * qty));
+            }
         }
         
         receipt.append("----------------------------------------\n");
         receipt.append(String.format("Subtotal:                ₱%.2f\n", subtotal));
+        
+        if (productSaleDiscount > 0) {
+            receipt.append(String.format("Product Sale Discount:  -₱%.2f\n", productSaleDiscount));
+        }
+        
         receipt.append(String.format("VAT (12%%):               ₱%.2f\n", vat));
         
         if (isSenior) {
