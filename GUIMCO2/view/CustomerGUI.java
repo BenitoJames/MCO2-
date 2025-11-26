@@ -2,9 +2,13 @@ package view;
 
 import controller.StoreControllerGUI;
 import java.awt.*;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import javax.swing.*;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.TableCellEditor;
 import model.*;
 
 /**
@@ -22,6 +26,12 @@ public class CustomerGUI extends JPanel {
     private JTextArea cartArea;
     private JLabel totalLabel;
     private JLabel pointsLabel;
+    // New cart table UI
+    private JTable cartTable;
+    private CartTableModel cartTableModel;
+    private JLabel cartItemCountLabel;
+    private JLabel cartTotalLabel;
+    private final NumberFormat currencyFmt = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-PH"));
     
     private double currentTotal;
     
@@ -114,25 +124,35 @@ public class CustomerGUI extends JPanel {
     private JPanel createCartPanel() {
         JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.setBorder(BorderFactory.createTitledBorder("Shopping Cart"));
-        
-        // Cart display area
-        cartArea = new JTextArea(15, 30);
-        cartArea.setEditable(false);
-        cartArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        JScrollPane scrollPane = new JScrollPane(cartArea);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
-        
-        // Total panel
-        JPanel totalPanel = new JPanel(new BorderLayout());
-        totalPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        totalPanel.setBackground(new Color(240, 240, 240));
-        
-        totalLabel = new JLabel("Total: ₱0.00");
-        totalLabel.setFont(new Font("Arial", Font.BOLD, 20));
-        totalPanel.add(totalLabel, BorderLayout.CENTER);
-        
-        mainPanel.add(totalPanel, BorderLayout.SOUTH);
-        
+
+        // Table-based cart view
+        cartTableModel = new CartTableModel(shoppingCart);
+        cartTable = new JTable(cartTableModel);
+        cartTable.setFillsViewportHeight(true);
+        cartTable.setRowHeight(24);
+        cartTable.setAutoCreateRowSorter(true);
+
+        // Quantity column uses a spinner editor (column index 4)
+        cartTable.getColumnModel().getColumn(4).setCellEditor(new SpinnerEditor());
+
+        JScrollPane tableScroll = new JScrollPane(cartTable);
+        mainPanel.add(tableScroll, BorderLayout.CENTER);
+
+        // Summary panel (items + total)
+        JPanel summaryPanel = new JPanel(new GridLayout(2, 1));
+        summaryPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        summaryPanel.setBackground(new Color(240, 240, 240));
+
+        cartItemCountLabel = new JLabel("Items: 0");
+        cartItemCountLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        cartTotalLabel = new JLabel("Total: " + currencyFmt.format(0));
+        cartTotalLabel.setFont(new Font("Arial", Font.BOLD, 20));
+        summaryPanel.add(cartItemCountLabel);
+        summaryPanel.add(cartTotalLabel);
+
+        mainPanel.add(summaryPanel, BorderLayout.SOUTH);
+
+        updateCartSummary();
         return mainPanel;
     }
     
@@ -267,6 +287,7 @@ public class CustomerGUI extends JPanel {
         
         updateCartDisplay();
         loadProducts(); // Refresh product list to show updated stock
+        updateCartSummary();
     }
     
     /**
@@ -292,9 +313,132 @@ public class CustomerGUI extends JPanel {
                 currentTotal += item.getSubtotal();
             }
         }
-        
-        cartArea.setText(sb.toString());
-        totalLabel.setText("Total: ₱" + String.format("%.2f", currentTotal));
+        // Old text-area cart is optional now; guard in case it's not present
+        if (cartArea != null) {
+            cartArea.setText(sb.toString());
+        }
+        if (totalLabel != null) {
+            totalLabel.setText("Total: ₱" + String.format("%.2f", currentTotal));
+        }
+        updateCartSummary();
+    }
+
+    private void updateCartSummary() {
+        int totalItems = 0;
+        double total = 0.0;
+        for (CartItem ci : shoppingCart) {
+            totalItems += ci.getQuantity();
+            total += ci.getQuantity() * ci.getProduct().getPrice();
+        }
+        if (cartItemCountLabel != null) {
+            cartItemCountLabel.setText("Items: " + totalItems);
+        }
+        if (cartTotalLabel != null) {
+            cartTotalLabel.setText("Total: " + currencyFmt.format(total));
+        }
+        if (cartTableModel != null) {
+            cartTableModel.fireTableDataChanged();
+        }
+    }
+
+    private class CartTableModel extends AbstractTableModel {
+        private final String[] cols = { "ID", "Name", "Category", "Unit Price", "Quantity", "Subtotal" };
+        private final List<CartItem> cart;
+
+        CartTableModel(List<CartItem> cart) {
+            this.cart = cart;
+        }
+
+        @Override
+        public int getRowCount() { return cart.size(); }
+
+        @Override
+        public int getColumnCount() { return cols.length; }
+
+        @Override
+        public String getColumnName(int col) { return cols[col]; }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            CartItem ci = cart.get(rowIndex);
+            if (columnIndex == 0) return ci.getProduct().getProductID();
+            if (columnIndex == 1) return ci.getProduct().getName();
+            if (columnIndex == 2) {
+                String id = ci.getProduct().getProductID();
+                if (id == null) return "";
+                int dash = id.indexOf('-');
+                return (dash > 0) ? id.substring(0, dash) : "";
+            }
+            if (columnIndex == 3) return currencyFmt.format(ci.getProduct().getPrice());
+            if (columnIndex == 4) return ci.getQuantity();
+            if (columnIndex == 5) return currencyFmt.format(ci.getProduct().getPrice() * ci.getQuantity());
+            return "";
+        }
+
+        @Override
+        public boolean isCellEditable(int rowIndex, int columnIndex) {
+            return columnIndex == 4; // Only Quantity editable
+        }
+
+        @Override
+        public void setValueAt(Object aValue, int rowIndex, int columnIndex) {
+            if (columnIndex == 4) {
+                int newQty;
+                try { newQty = Integer.parseInt(String.valueOf(aValue)); } catch (NumberFormatException e) { return; }
+                if (newQty <= 0) return;
+                CartItem ci = cart.get(rowIndex);
+                int oldQty = ci.getQuantity();
+                if (newQty == oldQty) return;
+
+                // Inventory-safe adjustment
+                Product product = ci.getProduct();
+                int delta = newQty - oldQty;
+
+                if (delta > 0) {
+                    // Need to take additional units from stock
+                    if (product.getQuantityInStock() >= delta) {
+                        product.setQuantityInStock(product.getQuantityInStock() - delta);
+                        ci.setQuantity(newQty);
+                    } else {
+                        // Not enough stock; ignore change and optionally notify
+                        JOptionPane.showMessageDialog(
+                            SwingUtilities.getWindowAncestor(cartTable),
+                            "Insufficient stock to increase quantity.",
+                            "Stock Limit",
+                            JOptionPane.WARNING_MESSAGE
+                        );
+                        return;
+                    }
+                } else {
+                    // delta < 0: return units to stock
+                    int refund = -delta;
+                    product.setQuantityInStock(product.getQuantityInStock() + refund);
+                    ci.setQuantity(newQty);
+                }
+
+                // Refresh product list to reflect new stock levels
+                loadProducts();
+                fireTableRowsUpdated(rowIndex, rowIndex);
+                updateCartSummary();
+            }
+        }
+    }
+
+    private class SpinnerEditor extends AbstractCellEditor implements TableCellEditor {
+        private final JSpinner spinner = new JSpinner(new SpinnerNumberModel(1, 1, Integer.MAX_VALUE, 1));
+
+        @Override
+        public Object getCellEditorValue() {
+            return spinner.getValue();
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+            int val = 1;
+            try { val = Integer.parseInt(String.valueOf(value)); } catch (NumberFormatException e) {}
+            spinner.setValue(val);
+            return spinner;
+        }
     }
     
     /**
