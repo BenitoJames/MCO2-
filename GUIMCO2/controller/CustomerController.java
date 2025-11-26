@@ -97,11 +97,93 @@ public class CustomerController {
     }
 
     /**
-     * Displays the entire inventory.
+     * Displays the entire inventory with category filtering.
      */
     private void handleBrowseInventory() {
-        System.out.println("\n--- Store Inventory ---");
-        System.out.println(inventory.viewAllInventory());
+        while (true) {
+            System.out.println("\n--- Browse Products by Category ---");
+            System.out.println("1. All Products");
+            System.out.println("2. Food");
+            System.out.println("3. Beverages");
+            System.out.println("4. Toiletries");
+            System.out.println("5. Household and Pet");
+            System.out.println("6. Pharmacy");
+            System.out.println("7. General and Specialty");
+            System.out.println("0. Back to Customer Menu");
+            
+            int choice = ConsoleHelper.getIntInput("Select category: ", 0, 7);
+            
+            if (choice == 0) {
+                break;
+            }
+            
+            String category = getCategoryName(choice);
+            displayProductsByCategory(category, choice);
+        }
+    }
+    
+    /**
+     * Gets the category name based on choice.
+     */
+    private String getCategoryName(int choice) {
+        switch (choice) {
+            case 1: return "All";
+            case 2: return "F";
+            case 3: return "B";
+            case 4: return "T";
+            case 5: return "H";
+            case 6: return "P";
+            case 7: return "G";
+            default: return "All";
+        }
+    }
+    
+    /**
+     * Displays products filtered by category.
+     */
+    private void displayProductsByCategory(String categoryPrefix, int choice) {
+        System.out.println("\n--- " + getCategoryDisplayName(choice) + " ---");
+        List<Product> allProducts = inventory.getAllProducts();
+        boolean found = false;
+        
+        for (Product product : allProducts) {
+            if (product.getQuantityInStock() > 0) {
+                if (categoryPrefix.equals("All") || matchesCategory(product.getProductID(), categoryPrefix)) {
+                    System.out.println(product.displayDetails());
+                    found = true;
+                }
+            }
+        }
+        
+        if (!found) {
+            System.out.println("No products available in this category.");
+        }
+        
+        ConsoleHelper.getStringInput("\nPress Enter to continue...");
+    }
+    
+    /**
+     * Gets display name for category.
+     */
+    private String getCategoryDisplayName(int choice) {
+        switch (choice) {
+            case 1: return "All Products";
+            case 2: return "Food";
+            case 3: return "Beverages";
+            case 4: return "Toiletries";
+            case 5: return "Household and Pet";
+            case 6: return "Pharmacy";
+            case 7: return "General and Specialty";
+            default: return "All Products";
+        }
+    }
+    
+    /**
+     * Checks if product ID matches category prefix.
+     */
+    private boolean matchesCategory(String productID, String prefix) {
+        if (productID == null) return false;
+        return productID.toUpperCase().startsWith(prefix.toUpperCase());
     }
 
     /**
