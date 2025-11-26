@@ -39,41 +39,46 @@ public class CustomerController {
 
     /**
      * Runs the main loop for the customer shopping menu.
-     * Uses a try-finally block to ensure stock is refunded if the customer leaves.
+     * Ensures stock is refunded if the customer leaves without completing checkout.
      */
     public void run() {
-        try {
-            while (this.isShopping) {
-                showCustomerMenu();
-                int choice = ConsoleHelper.getIntInput("Enter your choice: ", 0, 4);
-                switch (choice) {
-                    case 1:
-                        handleBrowseInventory();
-                        break;
-                    case 2:
-                        handleAddItemToCart();
-                        break;
-                    case 3:
-                        handleRemoveFromCart();
-                        break;
-                    case 4:
-                        handleCheckout();
-                        break;
-                    case 0:
-                        this.isShopping = false;
-                        break;
-                }
+        while (this.isShopping) {
+            showCustomerMenu();
+            int choice = ConsoleHelper.getIntInput("Enter your choice: ", 0, 4);
+            switch (choice) {
+                case 1:
+                    handleBrowseInventory();
+                    break;
+                case 2:
+                    handleAddItemToCart();
+                    break;
+                case 3:
+                    handleRemoveFromCart();
+                    break;
+                case 4:
+                    handleCheckout();
+                    break;
+                case 0:
+                    this.isShopping = false;
+                    break;
             }
-        } finally {
-            // This block runs no matter how the loop exits (checkout or '0')
-            if (!checkoutComplete) {
-                // If the user did not complete checkout, refund all items
-                refundAllCartStock();
-                
-                // Also refund any points they might have redeemed but not used
-                if (currentCustomer.hasMembership()) {
-                    System.out.println("Returning to main menu. Your cart has been emptied.");
-                }
+        }
+        
+        // Cleanup: ensure stock is refunded if checkout was not completed
+        cleanupOnExit();
+    }
+
+    /**
+     * Cleans up when the customer exits the shopping session.
+     * Refunds all cart stock if checkout was not completed.
+     */
+    private void cleanupOnExit() {
+        if (!checkoutComplete) {
+            // If the user did not complete checkout, refund all items
+            refundAllCartStock();
+            
+            if (currentCustomer.hasMembership()) {
+                System.out.println("Returning to main menu. Your cart has been emptied.");
             }
         }
     }
@@ -279,6 +284,8 @@ public class CustomerController {
         } else {
             // This case should be prevented by getDoubleInput min value
             System.out.println("Payment failed. Please try again.");
+            // We would loop here in a real app, but for MCO1 we'll just end.
+            // Since checkout is not complete, the 'finally' block will refund stock.
         }
         
         // After checkout (success or fail), stop shopping
