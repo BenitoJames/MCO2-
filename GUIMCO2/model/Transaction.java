@@ -290,5 +290,9 @@ public class Transaction {
     public double getSubtotal() {
         return subtotal;
     }
+    
+    public List<CartItem> getCartItems() {
+        return cartItems;
+    }
 }
 

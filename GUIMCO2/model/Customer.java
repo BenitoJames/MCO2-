@@ -17,6 +17,7 @@ public class Customer {
     private LocalDate cardExpiryDate;       // Membership card expiry
     private int points;                     // Membership points
     private boolean isGuest;                // True if guest user
+    private LocalDate lastActivityDate;     // Last activity date (for tracking)
 
     /**
      * Constructs a Customer object with user ID and name.
@@ -37,6 +38,7 @@ public class Customer {
         this.cardExpiryDate = null;
         this.points = 0;
         this.isGuest = false;
+        this.lastActivityDate = LocalDate.now();
     }
     
     /**
@@ -52,6 +54,7 @@ public class Customer {
         this.cardExpiryDate = null;
         this.points = 0;
         this.isGuest = true;
+        this.lastActivityDate = LocalDate.now();
     }
     
     /**
@@ -78,6 +81,7 @@ public class Customer {
         this.cardExpiryDate = null;
         this.points = 0;
         this.isGuest = false;
+        this.lastActivityDate = LocalDate.now();
     }
 
 
@@ -322,6 +326,24 @@ public class Customer {
      */
     public void setPoints(int points) {
         this.points = Math.max(0, points);
+    }
+
+    /**
+     * Gets the last activity date.
+     *
+     * @return (LocalDate) The last activity date.
+     */
+    public LocalDate getLastActivityDate() {
+        return this.lastActivityDate;
+    }
+
+    /**
+     * Sets the last activity date.
+     *
+     * @param date (LocalDate) The last activity date.
+     */
+    public void setLastActivityDate(LocalDate date) {
+        this.lastActivityDate = date;
     }
 
     /**
