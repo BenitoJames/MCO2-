@@ -1,7 +1,5 @@
 package util;
 
-import model.*;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileReader;
@@ -13,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.StringJoiner;
+import model.*;
 
 /**
  * Handles all file I/O for saving and loading data.
@@ -239,22 +238,24 @@ public class StoreDataHandler {
     
     /**
      * Saves the customer list to CUSTOMERS_FILE.
+     * Format: UserID,LastName,FirstName,MiddleName,Password,MembershipCardID,CardExpiry,Points
      *
      * @param customerList (List<Customer>) The list of customers.
      */
     public void saveCustomers(List<Customer> customerList) {
         try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(CUSTOMERS_FILE)))) {
             for (Customer c : customerList) {
-                StringJoiner csvLine = new StringJoiner(",");
-                csvLine.add(c.getCustomerID());
-                csvLine.add(c.getName());
-                csvLine.add(String.valueOf(c.getIsSenior()));
+                if (c.isGuest()) continue; // Don't save guest users
                 
-                if (c.hasMembership()) {
-                    csvLine.add(String.valueOf(c.getMembershipCard().getPoints()));
-                } else {
-                    csvLine.add("N/A");
-                }
+                StringJoiner csvLine = new StringJoiner(",");
+                csvLine.add(c.getUserID());
+                csvLine.add(c.getLastName());
+                csvLine.add(c.getFirstName());
+                csvLine.add(c.getMiddleName() != null && !c.getMiddleName().isEmpty() ? c.getMiddleName() : "");
+                csvLine.add(c.getPassword());
+                csvLine.add(c.getMembershipCardID() != null ? c.getMembershipCardID() : "");
+                csvLine.add(c.getCardExpiryDate() != null ? c.getCardExpiryDate().toString() : "");
+                csvLine.add(String.valueOf(c.getPoints()));
                 
                 out.println(csvLine.toString());
             }
@@ -266,6 +267,7 @@ public class StoreDataHandler {
     
     /**
      * Loads the customer list from CUSTOMERS_FILE.
+     * Format: UserID,LastName,FirstName,MiddleName,Password,MembershipCardID,CardExpiry,Points
      *
      * @return (List<Customer>) The loaded customer list.
      */
@@ -277,33 +279,115 @@ public class StoreDataHandler {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty()) continue;
                 
-                String[] data = line.split(",");
+                String[] data = line.split(",", -1); // -1 to keep empty strings
                 try {
-                    String id = data[0];
-                    String name = data[1];
-                    boolean isSenior = Boolean.parseBoolean(data[2]);
-                    String pointsStr = data[3];
-                    
-                    Customer customer = new Customer(id, name);
-                    customer.setIsSenior(isSenior);
-                    
-                    if (!pointsStr.equals("N/A")) {
-                        int points = Integer.parseInt(pointsStr);
-                        customer.assignMembershipCard(new MembershipCard(points));
+                    // Handle both old and new formats
+                    if (data.length >= 8) {
+                        // New format
+                        String userID = data[0];
+                        String lastName = data[1];
+                        String firstName = data[2];
+                        String middleName = data[3];
+                        String password = data[4];
+                        String cardID = data[5];
+                        String expiryStr = data[6];
+                        int points = Integer.parseInt(data[7]);
+                        
+                        Customer customer = new Customer(userID, lastName, firstName, middleName, password);
+                        
+                        if (!cardID.isEmpty() && !expiryStr.isEmpty()) {
+                            LocalDate expiry = LocalDate.parse(expiryStr);
+                            customer.assignMembershipCard(cardID, expiry);
+                        }
+                        
+                        customer.setPoints(points);
+                        customerList.add(customer);
+                    } else if (data.length >= 2) {
+                        // Old format migration: C-001,Full Name,isSenior,points
+                        // Convert to new format with default values
+                        String oldID = data[0];
+                        String fullName = data[1];
+                        
+                        // Parse name (assume "Last First" or just "Name")
+                        String[] nameParts = fullName.split(" ", 2);
+                        String lastName = nameParts[0];
+                        String firstName = nameParts.length > 1 ? nameParts[1] : "";
+                        
+                        // Generate new User ID
+                        String newUserID = generateUserID(customerList);
+                        
+                        // Default password for migrated accounts
+                        String defaultPassword = "password123";
+                        
+                        Customer customer = new Customer(newUserID, lastName, firstName, "", defaultPassword);
+                        
+                        // Check for membership points (old format)
+                        if (data.length >= 4 && !data[3].equals("N/A")) {
+                            int points = Integer.parseInt(data[3]);
+                            customer.setPoints(points);
+                        }
+                        
+                        customerList.add(customer);
                     }
-                    
-                    customerList.add(customer);
                     
                 } catch (Exception e) {
                     System.err.println("Error parsing customer line (skipping): " + line);
+                    e.printStackTrace();
                 }
             }
-            
         } catch (IOException e) {
             System.err.println("Error loading customers: " + e.getMessage());
         }
         
         return customerList;
+    }
+    
+    /**
+     * Generates a new User ID in format DLSUser-XXX.
+     *
+     * @param existingCustomers List of existing customers to check for ID conflicts.
+     * @return A unique User ID.
+     */
+    public String generateUserID(List<Customer> existingCustomers) {
+        int maxNum = 0;
+        
+        for (Customer c : existingCustomers) {
+            String id = c.getUserID();
+            if (id != null && id.startsWith("DLSUser-")) {
+                try {
+                    int num = Integer.parseInt(id.substring(8));
+                    maxNum = Math.max(maxNum, num);
+                } catch (NumberFormatException e) {
+                    // Ignore malformed IDs
+                }
+            }
+        }
+        
+        return String.format("DLSUser-%03d", maxNum + 1);
+    }
+    
+    /**
+     * Generates a new Membership Card ID in format DLSUCS-XXXXXXXX.
+     *
+     * @param existingCustomers List of existing customers to check for ID conflicts.
+     * @return A unique Membership Card ID.
+     */
+    public String generateMembershipCardID(List<Customer> existingCustomers) {
+        int maxNum = 0;
+        
+        for (Customer c : existingCustomers) {
+            String cardID = c.getMembershipCardID();
+            if (cardID != null && cardID.startsWith("DLSUCS-")) {
+                try {
+                    int num = Integer.parseInt(cardID.substring(7));
+                    maxNum = Math.max(maxNum, num);
+                } catch (NumberFormatException e) {
+                    // Ignore malformed IDs
+                }
+            }
+        }
+        
+        return String.format("DLSUCS-%08d", maxNum + 1);
     }
     
     /**
