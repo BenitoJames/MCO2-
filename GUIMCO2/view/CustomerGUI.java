@@ -23,6 +23,8 @@ public class CustomerGUI extends JPanel {
     
     // UI Components
     private JPanel productsPanel;
+    private JPanel categoryPanel;
+    private JScrollPane productsScrollPane;
     private JTextArea cartArea;
     private JLabel totalLabel;
     private JLabel pointsLabel;
@@ -34,6 +36,7 @@ public class CustomerGUI extends JPanel {
     private final NumberFormat currencyFmt = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-PH"));
     
     private double currentTotal;
+    private String currentCategory = null; // null = show categories
     
     /**
      * Constructs the customer shopping interface.
@@ -101,21 +104,165 @@ public class CustomerGUI extends JPanel {
     }
     
     /**
-     * Creates the products display panel.
+     * Creates the products display panel with category selection.
      */
     private JPanel createProductsPanel() {
         JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.setBorder(BorderFactory.createTitledBorder("Available Products"));
         
+        // Category selection panel
+        categoryPanel = createCategoryPanel();
+        
+        // Products panel (initially empty, shows after category selection)
         productsPanel = new JPanel();
         productsPanel.setLayout(new BoxLayout(productsPanel, BoxLayout.Y_AXIS));
         productsPanel.setBackground(Color.WHITE);
         
-        JScrollPane scrollPane = new JScrollPane(productsPanel);
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
+        productsScrollPane = new JScrollPane(productsPanel);
+        productsScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        
+        // Start with category selection
+        mainPanel.add(categoryPanel, BorderLayout.CENTER);
         
         return mainPanel;
+    }
+    
+    /**
+     * Creates the category selection panel.
+     */
+    private JPanel createCategoryPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBackground(Color.WHITE);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        JLabel titleLabel = new JLabel("Select a Category");
+        titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
+        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        panel.add(titleLabel);
+        panel.add(Box.createRigidArea(new Dimension(0, 20)));
+        
+        String[] categories = {
+            "All Products",
+            "Food",
+            "Beverages",
+            "Toiletries",
+            "Household and Pet",
+            "Pharmacy",
+            "General and Specialty"
+        };
+        
+        for (String category : categories) {
+            JButton categoryBtn = new JButton(category);
+            categoryBtn.setFont(new Font("Arial", Font.PLAIN, 16));
+            categoryBtn.setMaximumSize(new Dimension(300, 50));
+            categoryBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+            categoryBtn.setBackground(new Color(70, 130, 180));
+            categoryBtn.setForeground(Color.WHITE);
+            categoryBtn.setFocusPainted(false);
+            categoryBtn.addActionListener(e -> showProductsForCategory(category));
+            panel.add(categoryBtn);
+            panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        }
+        
+        return panel;
+    }
+    
+    /**
+     * Shows products for the selected category.
+     */
+    private void showProductsForCategory(String category) {
+        currentCategory = category;
+        
+        // Get the products panel container (the one with titled border)
+        Container parent = categoryPanel.getParent();
+        if (parent != null) {
+            parent.remove(categoryPanel);
+            
+            // Add back button at top
+            JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            topPanel.setBackground(Color.WHITE);
+            JButton backBtn = new JButton("← Back to Categories");
+            backBtn.setFont(new Font("Arial", Font.PLAIN, 14));
+            backBtn.addActionListener(e -> showCategoryPanel());
+            topPanel.add(backBtn);
+            
+            JPanel wrapperPanel = new JPanel(new BorderLayout());
+            wrapperPanel.add(topPanel, BorderLayout.NORTH);
+            wrapperPanel.add(productsScrollPane, BorderLayout.CENTER);
+            
+            parent.add(wrapperPanel, BorderLayout.CENTER);
+            parent.revalidate();
+            parent.repaint();
+        }
+        
+        loadProductsByCategory(category);
+    }
+    
+    /**
+     * Shows the category selection panel.
+     */
+    private void showCategoryPanel() {
+        currentCategory = null;
+        Container parent = productsScrollPane.getParent();
+        if (parent != null) {
+            Container grandParent = parent.getParent();
+            if (grandParent != null) {
+                grandParent.remove(parent);
+                grandParent.add(categoryPanel, BorderLayout.CENTER);
+                grandParent.revalidate();
+                grandParent.repaint();
+            }
+        }
+    }
+    
+    /**
+     * Loads products filtered by category.
+     */
+    private void loadProductsByCategory(String category) {
+        productsPanel.removeAll();
+        List<Product> allProducts = inventory.getAllProducts();
+        
+        for (Product product : allProducts) {
+            if (product.getQuantityInStock() > 0 && matchesCategory(product, category)) {
+                productsPanel.add(createProductCard(product));
+                productsPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+            }
+        }
+        
+        productsPanel.revalidate();
+        productsPanel.repaint();
+    }
+    
+    /**
+     * Checks if a product matches the selected category.
+     */
+    private boolean matchesCategory(Product product, String category) {
+        if (category.equals("All Products")) {
+            return true;
+        }
+        
+        String productID = product.getProductID();
+        if (productID == null) return false;
+        
+        String prefix = productID.contains("-") ? productID.substring(0, productID.indexOf("-")) : "";
+        
+        switch (category) {
+            case "Food":
+                return prefix.equalsIgnoreCase("F");
+            case "Beverages":
+                return prefix.equalsIgnoreCase("B");
+            case "Toiletries":
+                return prefix.equalsIgnoreCase("T");
+            case "Household and Pet":
+                return prefix.equalsIgnoreCase("H");
+            case "Pharmacy":
+                return prefix.equalsIgnoreCase("P");
+            case "General and Specialty":
+                return prefix.equalsIgnoreCase("G");
+            default:
+                return false;
+        }
     }
     
     /**
@@ -187,20 +334,12 @@ public class CustomerGUI extends JPanel {
     
     /**
      * Loads all products from inventory and displays them.
+     * If a category is selected, filters by that category.
      */
     private void loadProducts() {
-        productsPanel.removeAll();
-        List<Product> allProducts = inventory.getAllProducts();
-        
-        for (Product product : allProducts) {
-            if (product.getQuantityInStock() > 0) {
-                productsPanel.add(createProductCard(product));
-                productsPanel.add(Box.createRigidArea(new Dimension(0, 10)));
-            }
+        if (currentCategory != null) {
+            loadProductsByCategory(currentCategory);
         }
-        
-        productsPanel.revalidate();
-        productsPanel.repaint();
     }
     
     /**
