@@ -69,47 +69,65 @@ public class EmployeeGUI extends JPanel {
     }
     
     /**
-     * Creates the menu panel with action buttons.
+     * Creates the menu panel with action buttons and scrolling support.
      */
     private JPanel createMenuPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createEmptyBorder(20, 10, 20, 10));
-        panel.setBackground(new Color(240, 240, 240));
+        JPanel innerPanel = new JPanel();
+        innerPanel.setLayout(new BoxLayout(innerPanel, BoxLayout.Y_AXIS));
+        innerPanel.setBorder(BorderFactory.createEmptyBorder(20, 10, 20, 10));
+        innerPanel.setBackground(new Color(240, 240, 240));
         
         // Menu title
         JLabel menuTitle = new JLabel("Actions");
         menuTitle.setFont(new Font("Arial", Font.BOLD, 18));
         menuTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
-        panel.add(menuTitle);
-        panel.add(Box.createRigidArea(new Dimension(0, 20)));
+        innerPanel.add(menuTitle);
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         
         // Inventory Management
-        panel.add(createMenuButton("View Inventory", e -> displayInventory()));
-        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        innerPanel.add(createMenuButton("View Inventory", e -> displayInventory()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         
-        panel.add(createMenuButton("Add Product", e -> handleAddProduct()));
-        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        innerPanel.add(createMenuButton("Add Product", e -> handleAddProduct()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         
-        panel.add(createMenuButton("Restock Item", e -> handleRestock()));
-        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        innerPanel.add(createMenuButton("Restock Item", e -> handleRestock()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         
-        panel.add(createMenuButton("Low Stock Items", e -> displayLowStock()));
-        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        innerPanel.add(createMenuButton("Update Product Price", e -> handleUpdateProductPrice()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         
-        panel.add(createMenuButton("Expiring Items", e -> displayExpiringItems()));
-        panel.add(Box.createRigidArea(new Dimension(0, 20)));
+        innerPanel.add(createMenuButton("Update Product Information", e -> handleUpdateProductInfo()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        
+        innerPanel.add(createMenuButton("Low Stock Items", e -> displayLowStock()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+        
+        innerPanel.add(createMenuButton("Expiring Items", e -> displayExpiringItems()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         
         // Customer Management
-        panel.add(createMenuButton("View Customers", e -> displayCustomers()));
-        panel.add(Box.createRigidArea(new Dimension(0, 10)));
+        innerPanel.add(createMenuButton("View Customers", e -> displayCustomers()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 10)));
         
-        panel.add(createMenuButton("Add Customer", e -> handleAddCustomer()));
-        panel.add(Box.createRigidArea(new Dimension(0, 20)));
+        innerPanel.add(createMenuButton("Add Customer", e -> handleAddCustomer()));
+        innerPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         
         // Sales
-        panel.add(createMenuButton("View Sales Log", e -> controller.showSalesLog()));
+        innerPanel.add(createMenuButton("View Sales Log", e -> controller.showSalesLog()));
         
+        // Add glue to push buttons to top
+        innerPanel.add(Box.createVerticalGlue());
+        
+        // Wrap in JScrollPane for scrolling
+        JScrollPane scrollPane = new JScrollPane(innerPanel,
+            JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setBorder(null);
+        
+        // Return wrapper panel that contains scroll pane
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
     
@@ -262,15 +280,26 @@ public class EmployeeGUI extends JPanel {
                 return;
             }
             
-            String amountStr = JOptionPane.showInputDialog(this,
-                "Current stock: " + product.getQuantityInStock() + "\nEnter amount to add:",
-                "Restock",
-                JOptionPane.QUESTION_MESSAGE);
-            
-            if (amountStr != null) {
+            // Keep asking until valid input
+            boolean validInput = false;
+            while (!validInput) {
+                String amountStr = JOptionPane.showInputDialog(this,
+                    "Current stock: " + product.getQuantityInStock() + "\nEnter amount to add (whole number > 0):",
+                    "Restock",
+                    JOptionPane.QUESTION_MESSAGE);
+                
+                if (amountStr == null) {
+                    return;
+                }
+                
                 try {
                     int amount = Integer.parseInt(amountStr);
-                    if (amount > 0) {
+                    if (amount <= 0) {
+                        JOptionPane.showMessageDialog(this,
+                            "Amount must be greater than 0!",
+                            "Invalid Input",
+                            JOptionPane.ERROR_MESSAGE);
+                    } else {
                         product.setQuantityInStock(product.getQuantityInStock() + amount);
                         JOptionPane.showMessageDialog(this,
                             "Stock updated!\nNew stock: " + product.getQuantityInStock(),
@@ -278,10 +307,11 @@ public class EmployeeGUI extends JPanel {
                             JOptionPane.INFORMATION_MESSAGE);
                         controller.saveInventoryChanges();
                         displayInventory();
+                        validInput = true;
                     }
                 } catch (NumberFormatException e) {
                     JOptionPane.showMessageDialog(this,
-                        "Invalid number!",
+                        "Invalid input! Please enter a whole number greater than 0.",
                         "Error",
                         JOptionPane.ERROR_MESSAGE);
                 }
@@ -300,6 +330,101 @@ public class EmployeeGUI extends JPanel {
         if (dialog.isCustomerAdded()) {
             controller.saveCustomerChanges();
             displayCustomers();
+        }
+    }
+
+    private void handleUpdateProductPrice() {
+        String productID = JOptionPane.showInputDialog(this, "Enter Product ID:");
+        if (productID == null || productID.trim().isEmpty()) {
+            return;
+        }
+        
+        Product product = inventory.findProductByID(productID.trim());
+        if (product == null) {
+            JOptionPane.showMessageDialog(this,
+                "Product not found!",
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        try {
+            String currentPrice = String.format("%.2f", product.getPrice());
+            String newPriceStr = JOptionPane.showInputDialog(this,
+                "Product: " + product.getName() + "\nCurrent Price: ₱" + currentPrice + "\n\nEnter new price:",
+                currentPrice);
+            
+            if (newPriceStr == null) {
+                return;
+            }
+            
+            double newPrice = Double.parseDouble(newPriceStr);
+            if (newPrice < 0.01) {
+                JOptionPane.showMessageDialog(this,
+                    "Price must be at least 0.01!",
+                    "Invalid Price",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            product.setPrice(newPrice);
+            controller.saveInventoryChanges();
+            JOptionPane.showMessageDialog(this,
+                "Price updated successfully!\nNew Price: ₱" + String.format("%.2f", newPrice),
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this,
+                "Invalid price format!",
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void handleUpdateProductInfo() {
+        String productID = JOptionPane.showInputDialog(this, "Enter Product ID:");
+        if (productID == null || productID.trim().isEmpty()) {
+            return;
+        }
+        
+        Product product = inventory.findProductByID(productID.trim());
+        if (product == null) {
+            JOptionPane.showMessageDialog(this,
+                "Product not found!",
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        // Create a simple dialog for updating product info
+        JPanel panel = new JPanel(new GridLayout(0, 2, 10, 10));
+        JTextField nameField = new JTextField(product.getName(), 20);
+        JTextField brandField = new JTextField(product.getBrand(), 20);
+        JTextField variantField = new JTextField(product.getVariant(), 20);
+        
+        panel.add(new JLabel("Name:"));
+        panel.add(nameField);
+        panel.add(new JLabel("Brand:"));
+        panel.add(brandField);
+        panel.add(new JLabel("Variant:"));
+        panel.add(variantField);
+        
+        int result = JOptionPane.showConfirmDialog(this, panel,
+            "Update Product Information",
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE);
+        
+        if (result == JOptionPane.OK_OPTION) {
+            product.setName(nameField.getText());
+            product.setBrand(brandField.getText());
+            product.setVariant(variantField.getText());
+            
+            controller.saveInventoryChanges();
+            JOptionPane.showMessageDialog(this,
+                "Product information updated successfully!",
+                "Success",
+                JOptionPane.INFORMATION_MESSAGE);
+            displayInventory();
         }
     }
 }
