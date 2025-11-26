@@ -16,6 +16,7 @@ public class StoreControllerGUI {
     private Inventory inventory;
     private List<Customer> customerList;
     private final StoreDataHandler dataHandler;
+    private final SaleManager saleManager;
     
     // View components
     private final StoreGUI storeGUI;
@@ -34,6 +35,7 @@ public class StoreControllerGUI {
     public StoreControllerGUI(MainWindow mainWindow) {
         this.mainWindow = mainWindow;
         this.dataHandler = new StoreDataHandler();
+        this.saleManager = new SaleManager();
         
         // Load data from files
         this.inventory = dataHandler.loadInventory();
@@ -113,7 +115,7 @@ public class StoreControllerGUI {
                 );
                 
                 // Create and show employee GUI
-                employeeGUI = new EmployeeGUI(this, inventory, customerList);
+                employeeGUI = new EmployeeGUI(this, inventory, customerList, saleManager);
                 mainWindow.addScreen(employeeGUI, "EMPLOYEE");
                 mainWindow.showScreen("EMPLOYEE");
             } else {
@@ -196,10 +198,17 @@ public class StoreControllerGUI {
         dataHandler.saveCustomers(customerList);
         JOptionPane.showMessageDialog(
             mainWindow,
-            "Customer data saved successfully!",
+            "Customer changes saved successfully!",
             "Saved",
             JOptionPane.INFORMATION_MESSAGE
         );
+    }
+    
+    /**
+     * Gets the sale manager.
+     */
+    public SaleManager getSaleManager() {
+        return saleManager;
     }
     
     /**
