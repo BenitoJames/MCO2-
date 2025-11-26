@@ -23,8 +23,10 @@ public class Transaction {
     private double vatAmount;
     private double finalTotal;
     private double paymentReceived;
+    private double change;
     private int pointsRedeemed;
     private String paymentMethod;
+    private String seniorPWDCardID;
 
     // Constants as per spec
     private static final double VAT_RATE = 0.12;
@@ -45,8 +47,10 @@ public class Transaction {
         this.vatAmount = 0;
         this.finalTotal = 0;
         this.paymentReceived = 0;
+        this.change = 0;
         this.pointsRedeemed = 0;
         this.paymentMethod = "N/A";
+        this.seniorPWDCardID = null;
     }
 
     /**
@@ -59,33 +63,36 @@ public class Transaction {
     
     /**
      * Calculates the subtotal, discounts, VAT, and final total.
-     * @param isSenior (boolean) Whether to apply the senior discount.
+     * For Senior/PWD: Remove VAT first, then apply 20% discount on the entire order.
+     * @param isSeniorOrPWD (boolean) Whether to apply the senior/PWD discount.
      */
-    public void calculateTotals(boolean isSenior) {
+    public void calculateTotals(boolean isSeniorOrPWD) {
         // 1. Calculate Subtotal
         this.subtotal = 0;
         for (CartItem item : this.cartItems) {
             this.subtotal += item.getSubtotal();
         }
 
-        // 2. Calculate Senior Discount (if applicable)
-        if (isSenior) {
-            this.seniorDiscountAmount = this.subtotal * SENIOR_DISCOUNT;
+        if (isSeniorOrPWD) {
+            // Senior/PWD Discount Logic:
+            // Step 1: Remove VAT from subtotal
+            // If price is VAT-inclusive: VATable Sale = Subtotal / 1.12
+            double vatableSale = this.subtotal / (1 + VAT_RATE);
+            this.vatAmount = 0; // VAT is removed for Senior/PWD
+            
+            // Step 2: Apply 20% discount on the VAT-exclusive amount
+            this.seniorDiscountAmount = vatableSale * SENIOR_DISCOUNT;
+            this.finalTotal = vatableSale - this.seniorDiscountAmount;
         } else {
+            // Regular Customer: VAT is included in the price
             this.seniorDiscountAmount = 0;
+            
+            // Extract VAT for display purposes
+            double vatableSale = this.subtotal / (1 + VAT_RATE);
+            this.vatAmount = vatableSale * VAT_RATE;
+            
+            this.finalTotal = this.subtotal;
         }
-        
-        double discountedTotal = this.subtotal - this.seniorDiscountAmount;
-
-        // 3. Calculate VAT (VAT is based on the price *after* senior discount)
-        // We assume the price is VAT-inclusive, so we extract the VAT.
-        // VATable sale = discountedTotal / (1 + VAT_RATE)
-        // VAT Amount = VATable sale * VAT_RATE
-        double vatableSale = discountedTotal / (1 + VAT_RATE);
-        this.vatAmount = vatableSale * VAT_RATE;
-
-        // 4. Set Final Total
-        this.finalTotal = discountedTotal;
     }
 
     /**
@@ -123,13 +130,63 @@ public class Transaction {
     public double processPayment(double amount, String method) {
         this.paymentReceived = amount;
         this.paymentMethod = method;
-        double change = -1;
 
         if (this.paymentReceived >= this.finalTotal) {
-            change = this.paymentReceived - this.finalTotal;
+            this.change = this.paymentReceived - this.finalTotal;
+        } else {
+            this.change = -1;
         }
         
-        return change;
+        return this.change;
+    }
+    
+    /**
+     * Sets the points discount amount.
+     * @param discount (double) The discount amount from points redemption.
+     */
+    public void setPointsDiscount(double discount) {
+        this.pointsDiscountAmount = discount;
+        this.finalTotal -= discount;
+    }
+    
+    /**
+     * Sets the payment method.
+     * @param method (String) The payment method.
+     */
+    public void setPaymentMethod(String method) {
+        this.paymentMethod = method;
+    }
+    
+    /**
+     * Sets the amount paid.
+     * @param amount (double) The amount paid.
+     */
+    public void setAmountPaid(double amount) {
+        this.paymentReceived = amount;
+    }
+    
+    /**
+     * Sets the change amount.
+     * @param change (double) The change amount.
+     */
+    public void setChange(double change) {
+        this.change = change;
+    }
+    
+    /**
+     * Sets the Senior/PWD card ID for the transaction.
+     * @param cardID (String) The Senior/PWD card ID.
+     */
+    public void setSeniorPWDCardID(String cardID) {
+        this.seniorPWDCardID = cardID;
+    }
+    
+    /**
+     * Sets the number of points redeemed.
+     * @param points (int) The number of points redeemed.
+     */
+    public void setPointsRedeemed(int points) {
+        this.pointsRedeemed = points;
     }
     
     /**
@@ -171,8 +228,8 @@ public class Transaction {
         sb.append("====================================\n");
         sb.append("Date/Time: ").append(dateTime).append("\n");
         sb.append("Customer: ").append(this.customer.getName()).append("\n");
-        if (this.customer.getIsSenior()) {
-            sb.append("Status: Senior/PWD\n");
+        if (this.seniorPWDCardID != null) {
+            sb.append("Senior/PWD Card: ").append(this.seniorPWDCardID).append("\n");
         }
         sb.append("------------------------------------\n");
         sb.append("Items:\n");
@@ -183,17 +240,21 @@ public class Transaction {
         sb.append(String.format("Subtotal: ₱%.2f\n", this.subtotal));
 
         if (this.seniorDiscountAmount > 0) {
-            sb.append(String.format("Senior Discount: -₱%.2f\n", this.seniorDiscountAmount));
+            sb.append("VAT Removed (Senior/PWD)\n");
+            sb.append(String.format("Senior/PWD Discount (20%%): -₱%.2f\n", this.seniorDiscountAmount));
+        } else {
+            sb.append(String.format("VAT (12%% included): ₱%.2f\n", this.vatAmount));
         }
+        
         if (this.pointsDiscountAmount > 0) {
-            sb.append(String.format("Points Redeemed: -₱%.2f\n", this.pointsDiscountAmount));
+            sb.append(String.format("Points Redeemed (%d pts): -₱%.2f\n", 
+                this.pointsRedeemed, this.pointsDiscountAmount));
         }
 
-        sb.append(String.format("VAT (12%%): ₱%.2f\n", this.vatAmount));
         sb.append("------------------------------------\n");
         sb.append(String.format("TOTAL DUE: ₱%.2f\n", this.finalTotal));
         sb.append(String.format("AMOUNT PAID: ₱%.2f\n", this.paymentReceived));
-        sb.append(String.format("CHANGE: ₱%.2f\n", this.paymentReceived - this.finalTotal));
+        sb.append(String.format("CHANGE: ₱%.2f\n", this.change));
         sb.append("Payment Method: ").append(this.paymentMethod).append("\n");
         sb.append("====================================\n");
 
@@ -224,6 +285,10 @@ public class Transaction {
     // --- Getters ---
     public double getFinalTotal() {
         return finalTotal;
+    }
+    
+    public double getSubtotal() {
+        return subtotal;
     }
 }
 
