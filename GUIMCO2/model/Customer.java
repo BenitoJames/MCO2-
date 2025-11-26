@@ -371,5 +371,19 @@ public class Customer {
     public String toString() {
         return getSummary();
     }
+
+    
+    public boolean isInactiveForTwoYears() {
+        LocalDate twoYearsAgo = LocalDate.now().minusYears(2);
+        return lastActivityDate.isBefore(twoYearsAgo);
+    }
+
+    public long getDaysSinceLastActivity() {
+        return java.time.temporal.ChronoUnit.DAYS.between(lastActivityDate, LocalDate.now());    }
+    public void updateActivityDate() {        this.lastActivityDate = LocalDate.now();    }
+    
 }
+
+
+
 
