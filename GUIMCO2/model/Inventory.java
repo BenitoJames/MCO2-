@@ -54,14 +54,75 @@ public class Inventory {
 
     /**
      * Generates a string displaying the contents of both shelves.
+     * Products are sorted alphabetically by ID, then numerically.
      *
      * @return (String) A formatted string of all products.
      */
     public String viewAllInventory() {
         StringJoiner joiner = new StringJoiner("\n");
-        joiner.add(this.perishableShelf.getDisplayString("Perishable"));
-        joiner.add(this.nonPerishableShelf.getDisplayString("Non-Perishable"));
+        
+        // Get sorted products from both shelves
+        List<Product> perishableSorted = getSortedProducts(this.perishableShelf.getProducts());
+        List<Product> nonPerishableSorted = getSortedProducts(this.nonPerishableShelf.getProducts());
+        
+        joiner.add("--- Perishable ---");
+        if (perishableSorted.isEmpty()) {
+            joiner.add(" (Empty)");
+        } else {
+            for (Product p : perishableSorted) {
+                joiner.add(p.displayDetails());
+            }
+        }
+        
+        joiner.add("\n--- Non-Perishable ---");
+        if (nonPerishableSorted.isEmpty()) {
+            joiner.add(" (Empty)");
+        } else {
+            for (Product p : nonPerishableSorted) {
+                joiner.add(p.displayDetails());
+            }
+        }
+        
         return joiner.toString();
+    }
+
+    /**
+     * Sorts products by ID: alphabetically first (by category prefix), then numerically.
+     * Example: F-001, F-002, B-001, T-005
+     *
+     * @param products (List<Product>) The list to sort.
+     * @return (List<Product>) A sorted copy of the list.
+     */
+    private List<Product> getSortedProducts(List<Product> products) {
+        List<Product> sorted = new ArrayList<>(products);
+        sorted.sort((p1, p2) -> {
+            String id1 = p1.getProductID();
+            String id2 = p2.getProductID();
+            
+            // Split by dash to separate prefix and number
+            String[] parts1 = id1.split("-");
+            String[] parts2 = id2.split("-");
+            
+            String prefix1 = parts1.length > 0 ? parts1[0] : "";
+            String prefix2 = parts2.length > 0 ? parts2[0] : "";
+            
+            // Compare prefix alphabetically
+            int prefixCompare = prefix1.compareTo(prefix2);
+            if (prefixCompare != 0) {
+                return prefixCompare;
+            }
+            
+            // If same prefix, compare number numerically
+            try {
+                int num1 = parts1.length > 1 ? Integer.parseInt(parts1[1]) : 0;
+                int num2 = parts2.length > 1 ? Integer.parseInt(parts2[1]) : 0;
+                return Integer.compare(num1, num2);
+            } catch (NumberFormatException e) {
+                // If number parsing fails, compare as strings
+                return id1.compareTo(id2);
+            }
+        });
+        return sorted;
     }
 
     /**
