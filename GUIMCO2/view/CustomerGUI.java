@@ -35,6 +35,7 @@ public class CustomerGUI extends JPanel {
     private JLabel cartTotalLabel;
     private final NumberFormat currencyFmt = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-PH"));
     
+    private JTextField searchField;
     private double currentTotal;
     private String currentCategory = null; // null = show categories
     
@@ -179,14 +180,51 @@ public class CustomerGUI extends JPanel {
         if (parent != null) {
             parent.remove(categoryPanel);
             
-            // Add back button at top
-            JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            // Create top panel with back button and search bar
+            JPanel topPanel = new JPanel(new BorderLayout());
             topPanel.setBackground(Color.WHITE);
-            JButton backBtn = new JButton("← Back to Categories");
-            backBtn.setFont(new Font("Arial", Font.PLAIN, 14));
-            backBtn.addActionListener(e -> showCategoryPanel());
-            topPanel.add(backBtn);
+            topPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
             
+            // Back button on the left
+            JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            leftPanel.setBackground(Color.WHITE);
+            JButton backBtn = new JButton("← Back to Categories");
+            backBtn.setFont(new Font("Arial", Font.BOLD, 14));
+            backBtn.addActionListener(e -> showCategoryPanel());
+            leftPanel.add(backBtn);
+            topPanel.add(leftPanel, BorderLayout.WEST);
+            
+            // Search bar in the center
+            JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+            searchPanel.setBackground(Color.WHITE);
+            JLabel searchLabel = new JLabel("Search:");
+            searchLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+            searchPanel.add(searchLabel);
+            
+            searchField = new JTextField(25);
+            searchField.setFont(new Font("Arial", Font.PLAIN, 14));
+            searchField.addActionListener(e -> searchProducts()); // Allow Enter key
+            searchPanel.add(searchField);
+            
+            JButton searchBtn = new JButton("🔍 Search");
+            searchBtn.setFont(new Font("Arial", Font.BOLD, 14));
+            searchBtn.setBackground(new Color(70, 130, 180));
+            searchBtn.setForeground(Color.WHITE);
+            searchBtn.setFocusPainted(false);
+            searchBtn.addActionListener(e -> searchProducts());
+            searchPanel.add(searchBtn);
+            
+            JButton clearSearchBtn = new JButton("Clear");
+            clearSearchBtn.setFont(new Font("Arial", Font.PLAIN, 14));
+            clearSearchBtn.addActionListener(e -> {
+                searchField.setText("");
+                loadProductsByCategory(category);
+            });
+            searchPanel.add(clearSearchBtn);
+            
+            topPanel.add(searchPanel, BorderLayout.CENTER);
+            
+            // Create wrapper panel with top panel and products
             JPanel wrapperPanel = new JPanel(new BorderLayout());
             wrapperPanel.add(topPanel, BorderLayout.NORTH);
             wrapperPanel.add(productsScrollPane, BorderLayout.CENTER);
@@ -263,6 +301,43 @@ public class CustomerGUI extends JPanel {
             default:
                 return false;
         }
+    }
+    
+    /**
+     * Searches for products by name (case-insensitive, partial match).
+     */
+    private void searchProducts() {
+        String searchText = searchField.getText().trim().toLowerCase();
+        if (searchText.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                "Please enter a search term.",
+                "Search",
+                JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        
+        productsPanel.removeAll();
+        List<Product> allProducts = inventory.getAllProducts();
+        int foundCount = 0;
+        
+        for (Product product : allProducts) {
+            if (product.getQuantityInStock() > 0 && 
+                product.getName().toLowerCase().contains(searchText)) {
+                productsPanel.add(createProductCard(product));
+                productsPanel.add(Box.createRigidArea(new Dimension(0, 10)));
+                foundCount++;
+            }
+        }
+        
+        if (foundCount == 0) {
+            JLabel noResultsLabel = new JLabel("No products found matching: " + searchText);
+            noResultsLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+            noResultsLabel.setForeground(Color.GRAY);
+            productsPanel.add(noResultsLabel);
+        }
+        
+        productsPanel.revalidate();
+        productsPanel.repaint();
     }
     
     /**
@@ -354,21 +429,37 @@ public class CustomerGUI extends JPanel {
         card.setBackground(Color.WHITE);
         card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
         
+        // Build tooltip with brand, variant, and expiry date
+        StringBuilder tooltip = new StringBuilder("<html>");
+        tooltip.append("<b>").append(product.getName()).append("</b><br>");
+        tooltip.append("Brand: ").append(product.getBrand()).append("<br>");
+        tooltip.append("Variant: ").append(product.getVariant()).append("<br>");
+        if (product instanceof PerishableProduct) {
+            PerishableProduct perishable = (PerishableProduct) product;
+            tooltip.append("Expiry: ").append(perishable.getExpirationDate()).append("<br>");
+        }
+        tooltip.append("</html>");
+        card.setToolTipText(tooltip.toString());
+        
         // Product info
         JPanel infoPanel = new JPanel(new GridLayout(3, 1));
         infoPanel.setBackground(Color.WHITE);
+        infoPanel.setToolTipText(tooltip.toString());
         
         JLabel nameLabel = new JLabel(product.getName());
         nameLabel.setFont(new Font("Arial", Font.BOLD, 14));
+        nameLabel.setToolTipText(tooltip.toString());
         infoPanel.add(nameLabel);
         
         JLabel priceLabel = new JLabel("₱" + String.format("%.2f", product.getPrice()));
         priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+        priceLabel.setToolTipText(tooltip.toString());
         infoPanel.add(priceLabel);
         
         JLabel stockLabel = new JLabel("Stock: " + product.getQuantityInStock());
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(Color.GRAY);
+        stockLabel.setToolTipText(tooltip.toString());
         infoPanel.add(stockLabel);
         
         card.add(infoPanel, BorderLayout.CENTER);
@@ -624,23 +715,21 @@ public class CustomerGUI extends JPanel {
             transaction.addItem(item);
         }
         
-        // Calculate totals
-        transaction.calculateTotals(customer.getIsSenior());
+        // Calculate totals (not Senior/PWD yet - will be applied in PaymentDialog if needed)
+        transaction.calculateTotals(false);
         
-        // Show payment dialog
+        // Show payment dialog with dataHandler and customerList for membership purchase
         PaymentDialog dialog = new PaymentDialog(
             SwingUtilities.getWindowAncestor(this),
             transaction,
-            customer
+            customer,
+            controller.getDataHandler(),
+            controller.getCustomerList()
         );
         dialog.setVisible(true);
         
         if (dialog.isTransactionCompleted()) {
-            // Update customer points
-            if (customer.hasMembership()) {
-                customer.earnPoints(transaction.getAmountForPointsEarning());
-            }
-            
+            // Points are now earned within PaymentDialog when payment is processed
             controller.completeTransaction(transaction);
         }
     }
