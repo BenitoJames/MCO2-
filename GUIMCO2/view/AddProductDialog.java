@@ -1,11 +1,10 @@
 package view;
 
-import model.*;
-
-import javax.swing.*;
 import java.awt.*;
 import java.time.LocalDate;
 import java.util.Arrays;
+import javax.swing.*;
+import model.*;
 
 /**
  * Dialog for adding a new product to inventory.
@@ -62,24 +61,29 @@ public class AddProductDialog extends JDialog {
         JPanel formPanel = new JPanel(new GridLayout(0, 2, 10, 10));
         formPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
         
-        // Product ID
+        // Category (FIRST)
+        formPanel.add(new JLabel("Category:"));
+        categoryCombo = new JComboBox<>(new String[]{
+            "Food", "Beverages", "Pharmacy", 
+            "Toiletries", "Household & Pet", "General & Specialty"
+        });
+        categoryCombo.addActionListener(e -> {
+            updateExpiryFieldVisibility();
+            updateGeneratedID();
+        });
+        formPanel.add(categoryCombo);
+        
+        // Product ID (auto-generated, read-only)
         formPanel.add(new JLabel("Product ID:"));
         idField = new JTextField();
+        idField.setEditable(false);
+        idField.setText(generateProductID(0)); // Initial generation
         formPanel.add(idField);
         
         // Name
         formPanel.add(new JLabel("Product Name:"));
         nameField = new JTextField();
         formPanel.add(nameField);
-        
-        // Category
-        formPanel.add(new JLabel("Category:"));
-        categoryCombo = new JComboBox<>(new String[]{
-            "Food", "Beverages", "Pharmacy", 
-            "Toiletries", "HouseholdAndPet", "GeneralAndSpecialty"
-        });
-        categoryCombo.addActionListener(e -> updateExpiryFieldVisibility());
-        formPanel.add(categoryCombo);
         
         // Price
         formPanel.add(new JLabel("Price (₱):"));
@@ -244,5 +248,66 @@ public class AddProductDialog extends JDialog {
      */
     public boolean isProductAdded() {
         return productAdded;
+    }
+
+    /**
+     * Updates the generated Product ID based on category selection.
+     */
+    private void updateGeneratedID() {
+        int categoryIndex = categoryCombo.getSelectedIndex();
+        String generatedID = generateProductID(categoryIndex);
+        idField.setText(generatedID);
+    }
+
+    /**
+     * Generates a Product ID based on category index.
+     *
+     * @param categoryIndex (int) The selected category index (0-5).
+     * @return (String) The generated Product ID.
+     */
+    private String generateProductID(int categoryIndex) {
+        String prefix;
+        switch (categoryIndex) {
+            case 0:
+                prefix = "F"; // Food
+                break;
+            case 1:
+                prefix = "B"; // Beverages
+                break;
+            case 2:
+                prefix = "P"; // Pharmacy
+                break;
+            case 3:
+                prefix = "T"; // Toiletries
+                break;
+            case 4:
+                prefix = "H"; // Household & Pet
+                break;
+            case 5:
+                prefix = "G"; // General & Specialty
+                break;
+            default:
+                prefix = "X";
+        }
+        
+        // Find the highest number for this prefix
+        java.util.List<Product> allProducts = inventory.getAllProducts();
+        int maxNum = 0;
+        for (Product p : allProducts) {
+            String id = p.getProductID();
+            if (id.startsWith(prefix + "-")) {
+                try {
+                    String numStr = id.substring(prefix.length() + 1);
+                    int num = Integer.parseInt(numStr);
+                    if (num > maxNum) {
+                        maxNum = num;
+                    }
+                } catch (NumberFormatException e) {
+                    // Ignore malformed IDs
+                }
+            }
+        }
+        
+        return String.format("%s-%03d", prefix, maxNum + 1);
     }
 }

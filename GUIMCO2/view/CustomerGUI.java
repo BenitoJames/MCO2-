@@ -143,11 +143,6 @@ public class CustomerGUI extends JPanel {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 15));
         panel.setBackground(new Color(245, 245, 245));
         
-        JButton removeItemButton = new JButton("Remove Item");
-        removeItemButton.setFont(new Font("Arial", Font.BOLD, 14));
-        removeItemButton.addActionListener(e -> handleRemoveItem());
-        panel.add(removeItemButton);
-        
         JButton clearCartButton = new JButton("Clear Cart");
         clearCartButton.setFont(new Font("Arial", Font.BOLD, 14));
         clearCartButton.addActionListener(e -> clearCart());
@@ -367,106 +362,6 @@ public class CustomerGUI extends JPanel {
         }
     }
     
-    /**
-     * Handles removing items from cart.
-     */
-    private void handleRemoveItem() {
-        if (shoppingCart.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                "Your cart is empty!",
-                "Empty Cart",
-                JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        
-        // Show options: remove 1, remove X, or remove all
-        String[] options = {"Remove 1 Unit", "Remove Specific Quantity", "Remove All of Item", "Cancel"};
-        int choice = JOptionPane.showOptionDialog(this,
-            "How would you like to remove items?",
-            "Remove from Cart",
-            JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            options,
-            options[3]);
-        
-        if (choice == 3 || choice == -1) {
-            return; // Cancel
-        }
-        
-        // Get item to remove
-        String[] cartItems = new String[shoppingCart.size()];
-        for (int i = 0; i < shoppingCart.size(); i++) {
-            CartItem item = shoppingCart.get(i);
-            cartItems[i] = (i + 1) + ". " + item.getProduct().getName() + " (Qty: " + item.getQuantity() + ")";
-        }
-        
-        int itemIndex = JOptionPane.showOptionDialog(this,
-            "Select item to remove:",
-            "Select Item",
-            JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            cartItems,
-            cartItems[0]);
-        
-        if (itemIndex < 0) {
-            return; // Cancel
-        }
-        
-        CartItem itemToRemove = shoppingCart.get(itemIndex);
-        Product product = itemToRemove.getProduct();
-        int quantityToRemove = 0;
-        
-        try {
-            switch (choice) {
-                case 0: // Remove 1 unit
-                    quantityToRemove = 1;
-                    break;
-                case 1: // Remove specific quantity
-                    String qtyStr = JOptionPane.showInputDialog(this,
-                        "Enter quantity to remove (max " + itemToRemove.getQuantity() + "):",
-                        "1");
-                    if (qtyStr == null) {
-                        return;
-                    }
-                    quantityToRemove = Integer.parseInt(qtyStr);
-                    if (quantityToRemove < 1 || quantityToRemove > itemToRemove.getQuantity()) {
-                        JOptionPane.showMessageDialog(this,
-                            "Invalid quantity!",
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-                    break;
-                case 2: // Remove all
-                    quantityToRemove = itemToRemove.getQuantity();
-                    break;
-            }
-            
-            // Refund stock
-            product.setQuantityInStock(product.getQuantityInStock() + quantityToRemove);
-            
-            // Update cart
-            if (quantityToRemove == itemToRemove.getQuantity()) {
-                shoppingCart.remove(itemIndex);
-            } else {
-                itemToRemove.setQuantity(itemToRemove.getQuantity() - quantityToRemove);
-            }
-            
-            updateCartDisplay();
-            JOptionPane.showMessageDialog(this,
-                "Removed " + quantityToRemove + "x " + product.getName(),
-                "Success",
-                JOptionPane.INFORMATION_MESSAGE);
-        } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this,
-                "Invalid input!",
-                "Error",
-                JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
     /**
      * Handles cancelling the shopping session.
      */
