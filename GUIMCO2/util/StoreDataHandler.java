@@ -15,6 +15,7 @@ import model.*;
 
 /**
  * Handles all file I/O for saving and loading data.
+ *  includes activity date tracking for inactivity detection.
  */
 public class StoreDataHandler {
     private static final String INVENTORY_FILE = "inventory.csv";
@@ -237,8 +238,8 @@ public class StoreDataHandler {
     }
     
     /**
-     * Saves the customer list to CUSTOMERS_FILE.
-     * Format: UserID,LastName,FirstName,MiddleName,Password,MembershipCardID,CardExpiry,Points
+     * Saves the customer list to CUSTOMERS_FILE with activity date tracking.
+     * Format: UserID,LastName,FirstName,MiddleName,Password,MembershipCardID,CardExpiry,Points,LastActivityDate
      *
      * @param customerList (List<Customer>) The list of customers.
      */
@@ -256,6 +257,8 @@ public class StoreDataHandler {
                 csvLine.add(c.getMembershipCardID() != null ? c.getMembershipCardID() : "");
                 csvLine.add(c.getCardExpiryDate() != null ? c.getCardExpiryDate().toString() : "");
                 csvLine.add(String.valueOf(c.getPoints()));
+                // NEW: Add last activity date as 9th column
+                csvLine.add(c.getLastActivityDate() != null ? c.getLastActivityDate().toString() : LocalDate.now().toString());
                 
                 out.println(csvLine.toString());
             }
@@ -266,8 +269,9 @@ public class StoreDataHandler {
     }
     
     /**
-     * Loads the customer list from CUSTOMERS_FILE.
-     * Format: UserID,LastName,FirstName,MiddleName,Password,MembershipCardID,CardExpiry,Points
+     * Loads the customer list from CUSTOMERS_FILE with activity date support.
+     * Format: UserID,LastName,FirstName,MiddleName,Password,MembershipCardID,CardExpiry,Points,LastActivityDate
+     * Handles both old format (without activity date) and new format (with activity date).
      *
      * @return (List<Customer>) The loaded customer list.
      */
@@ -282,8 +286,30 @@ public class StoreDataHandler {
                 String[] data = line.split(",", -1); // -1 to keep empty strings
                 try {
                     // Handle both old and new formats
-                    if (data.length >= 8) {
-                        // New format
+                    if (data.length >= 9) {
+                        // NEW FORMAT: includes activity date (column 9)
+                        String userID = data[0];
+                        String lastName = data[1];
+                        String firstName = data[2];
+                        String middleName = data[3];
+                        String password = data[4];
+                        String cardID = data[5];
+                        String expiryStr = data[6];
+                        int points = Integer.parseInt(data[7]);
+                        LocalDate lastActivityDate = parseActivityDate(data[8]);
+                        
+                        Customer customer = new Customer(userID, lastName, firstName, middleName, password);
+                        customer.setLastActivityDate(lastActivityDate);
+                        
+                        if (!cardID.isEmpty() && !expiryStr.isEmpty()) {
+                            LocalDate expiry = LocalDate.parse(expiryStr);
+                            customer.assignMembershipCard(cardID, expiry);
+                        }
+                        
+                        customer.setPoints(points);
+                        customerList.add(customer);
+                    } else if (data.length >= 8) {
+                        // OLD FORMAT: without activity date
                         String userID = data[0];
                         String lastName = data[1];
                         String firstName = data[2];
@@ -294,6 +320,8 @@ public class StoreDataHandler {
                         int points = Integer.parseInt(data[7]);
                         
                         Customer customer = new Customer(userID, lastName, firstName, middleName, password);
+                        // Set activity date to today for old records
+                        customer.setLastActivityDate(LocalDate.now());
                         
                         if (!cardID.isEmpty() && !expiryStr.isEmpty()) {
                             LocalDate expiry = LocalDate.parse(expiryStr);
@@ -303,7 +331,7 @@ public class StoreDataHandler {
                         customer.setPoints(points);
                         customerList.add(customer);
                     } else if (data.length >= 2) {
-                        // Old format migration: C-001,Full Name,isSenior,points
+                        // VERY OLD FORMAT MIGRATION: C-001,Full Name,isSenior,points
                         // Convert to new format with default values
                         String oldID = data[0];
                         String fullName = data[1];
@@ -320,6 +348,7 @@ public class StoreDataHandler {
                         String defaultPassword = "password123";
                         
                         Customer customer = new Customer(newUserID, lastName, firstName, "", defaultPassword);
+                        customer.setLastActivityDate(LocalDate.now());
                         
                         // Check for membership points (old format)
                         if (data.length >= 4 && !data[3].equals("N/A")) {
@@ -340,6 +369,25 @@ public class StoreDataHandler {
         }
         
         return customerList;
+    }
+    
+    /**
+     * Parses activity date from CSV string.
+     * Returns today's date if parsing fails or string is empty.
+     *
+     * @param dateStr (String) The date string from CSV.
+     * @return (LocalDate) The parsed date, or today's date if parsing fails.
+     */
+    private LocalDate parseActivityDate(String dateStr) {
+        try {
+            if (dateStr == null || dateStr.trim().isEmpty()) {
+                return LocalDate.now();
+            }
+            return LocalDate.parse(dateStr.trim());
+        } catch (Exception e) {
+            System.err.println("Warning: Could not parse activity date: " + dateStr + ". Using today's date.");
+            return LocalDate.now();
+        }
     }
     
     /**
