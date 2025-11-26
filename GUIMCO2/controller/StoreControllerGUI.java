@@ -66,64 +66,19 @@ public class StoreControllerGUI {
     }
     
     /**
-     * Handles the customer shopping flow.
-     * Creates a guest customer or allows member login.
+     * Handles the customer shopping flow with authentication.
+     * Shows Sign In / Sign Up / Guest dialog.
      */
     public void startCustomerShopping() {
-        // Show dialog to ask if customer has membership
-        int choice = JOptionPane.showConfirmDialog(
-            mainWindow,
-            "Do you have a membership card?",
-            "Customer Login",
-            JOptionPane.YES_NO_OPTION
-        );
+        // Show authentication dialog
+        AuthenticationDialog authDialog = new AuthenticationDialog(mainWindow, dataHandler, customerList);
+        authDialog.setVisible(true);
         
-        if (choice == JOptionPane.YES_OPTION) {
-            // Member login
-            String customerID = JOptionPane.showInputDialog(
-                mainWindow,
-                "Enter your Customer ID:",
-                "Member Login",
-                JOptionPane.QUESTION_MESSAGE
-            );
-            
-            if (customerID != null && !customerID.trim().isEmpty()) {
-                Customer found = findCustomerByID(customerID.trim());
-                if (found != null) {
-                    currentCustomer = found;
-                    JOptionPane.showMessageDialog(
-                        mainWindow,
-                        "Welcome back, " + found.getName() + "!",
-                        "Login Successful",
-                        JOptionPane.INFORMATION_MESSAGE
-                    );
-                } else {
-                    JOptionPane.showMessageDialog(
-                        mainWindow,
-                        "Customer ID not found. Proceeding as Guest.",
-                        "Not Found",
-                        JOptionPane.WARNING_MESSAGE
-                    );
-                    currentCustomer = createGuestCustomer();
-                }
-            } else {
-                return; // User cancelled
-            }
-        } else if (choice == JOptionPane.NO_OPTION) {
-            // Guest checkout
-            currentCustomer = createGuestCustomer();
-        } else {
+        if (!authDialog.isSuccess()) {
             return; // User cancelled
         }
         
-        // Ask for Senior/PWD status
-        int seniorChoice = JOptionPane.showConfirmDialog(
-            mainWindow,
-            "Are you a Senior Citizen or PWD?",
-            "Senior/PWD Discount",
-            JOptionPane.YES_NO_OPTION
-        );
-        currentCustomer.setIsSenior(seniorChoice == JOptionPane.YES_OPTION);
+        currentCustomer = authDialog.getAuthenticatedCustomer();
         
         // Create and show customer GUI
         customerGUI = new CustomerGUI(this, inventory, currentCustomer);
@@ -148,7 +103,7 @@ public class StoreControllerGUI {
         if (option == JOptionPane.OK_OPTION) {
             String password = new String(passwordField.getPassword());
             
-            // Hard-coded password
+            // Hard-coded password (as per MCO1 specs)
             if (password.equals("pass123")) {
                 JOptionPane.showMessageDialog(
                     mainWindow,
@@ -333,16 +288,12 @@ public class StoreControllerGUI {
     
     /**
      * Creates a guest customer with a unique ID.
+     * Note: This method is kept for backward compatibility but guests now use Customer() constructor.
      *
      * @return A new guest Customer object
      */
     private Customer createGuestCustomer() {
-        // Generate unique guest ID
-        int guestNumber = 1;
-        while (findCustomerByID("GUEST-" + String.format("%03d", guestNumber)) != null) {
-            guestNumber++;
-        }
-        return new Customer("GUEST-" + String.format("%03d", guestNumber), "Guest");
+        return new Customer(); // Guest constructor
     }
     
     // --- Getters ---
