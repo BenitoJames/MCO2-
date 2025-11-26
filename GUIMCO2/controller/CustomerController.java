@@ -19,6 +19,7 @@ public class CustomerController {
     private Customer currentCustomer;
     private List<CartItem> shoppingCart;
     private StoreDataHandler dataHandler;
+    private List<Customer> customerList;
     private boolean isShopping;
     private boolean checkoutComplete;
 
@@ -28,11 +29,13 @@ public class CustomerController {
      * @param inventory (Inventory) A reference to the main inventory.
      * @param customer (Customer) The customer who is shopping.
      * @param dataHandler (StoreDataHandler) A reference to the data handler for saving receipts.
+     * @param customerList (List<Customer>) A reference to the customer list.
      */
-    public CustomerController(Inventory inventory, Customer customer, StoreDataHandler dataHandler) {
+    public CustomerController(Inventory inventory, Customer customer, StoreDataHandler dataHandler, List<Customer> customerList) {
         this.inventory = inventory;
         this.currentCustomer = customer;
         this.dataHandler = dataHandler;
+        this.customerList = customerList;
         this.shoppingCart = new ArrayList<>();
         this.isShopping = true;
         this.checkoutComplete = false; // Flag to check if checkout was successful
@@ -411,114 +414,372 @@ public class CustomerController {
             return;
         }
 
-        // 1. Create transaction and add items
-        Transaction transaction = new Transaction(currentCustomer);
-        for (CartItem item : shoppingCart) {
-            transaction.addItem(item);
-        }
-
-        // 2. Ask for Senior/PWD status
+        // Step 1: Senior/PWD Dialog (for EVERYONE)
         boolean isSenior = false;
         boolean askSenior = ConsoleHelper.getYesNoInput("Are you a Senior Citizen or PWD? (y/n): ");
         if (askSenior) {
             String seniorID = ConsoleHelper.getStringInput("Enter your Senior/PWD ID (format: SRC-XXXX or PWD-XXXX): ");
             if (isValidSeniorPWDID(seniorID)) {
                 isSenior = true;
-                System.out.println("Senior/PWD discount applied (20% off).");
+                System.out.println("Senior/PWD discount applied (20% off after VAT deduction).");
             } else {
                 System.out.println("Invalid Senior/PWD ID format. Discount not applied.");
             }
         }
 
-        // 3. Calculate totals (applies senior discount if validated)
-        transaction.calculateTotals(isSenior);
-        double finalTotal = transaction.getFinalTotal();
-        
-        System.out.println(transaction.getTotalsString());
-
-        // 4. Offer membership card purchase for non-members (not guests)
-        if (!currentCustomer.isGuest() && !currentCustomer.hasMembership()) {
-            boolean wantsMembership = ConsoleHelper.getYesNoInput("Purchase a membership card for ₱50.00? (y/n): ");
-            if (wantsMembership) {
-                finalTotal = handleMembershipPurchase(finalTotal);
-            }
-        }
-
-        // 5. Handle Point Redemption
-        if (currentCustomer.hasMembership()) {
-            int currentPoints = currentCustomer.getPoints();
-            System.out.println("\nYour Points: " + currentPoints);
-            
-            // Calculate points to be earned
-            int pointsToEarn = (int) (transaction.getAmountForPointsEarning() / 50);
-            System.out.println("Points to be earned: " + pointsToEarn + " (1 point per ₱50)");
-            
-            if (currentPoints > 0) {
-                boolean usePoints = ConsoleHelper.getYesNoInput("Use points to pay? (1 point = ₱1)");
-                if (usePoints) {
-                    int maxPoints = (int) Math.min(currentPoints, finalTotal);
-                    int pointsToUse = ConsoleHelper.getIntInput("Enter points to use (max " + maxPoints + "): ", 0, maxPoints);
+        // Step 2: Membership Card Dialog (only if user doesn't have one)
+        double membershipFee = 0.0;
+        if (!currentCustomer.hasMembership()) {
+            if (currentCustomer.isGuest()) {
+                // Guest user - show 3 options
+                System.out.println("\nMembership Card Options:");
+                System.out.println("1. Yes, purchase for ₱50.00");
+                System.out.println("2. No, continue without membership");
+                System.out.println("3. I have a card already");
+                int memberChoice = ConsoleHelper.getIntInput("Enter choice: ", 1, 3);
+                
+                if (memberChoice == 1) {
+                    // Purchase membership and create account for guest
+                    membershipFee = 50.0;
+                    String userID = generateUserID();
+                    String password = "DLSUser2025";
+                    String membershipID = generateMembershipID();
+                    LocalDate expiryDate = LocalDate.now().plusYears(1);
                     
-                    finalTotal = transaction.redeemPoints(pointsToUse);
+                    // Update current customer to be a registered user
+                    currentCustomer = new Customer(userID, "Guest", "User", "", password);
+                    currentCustomer.assignMembershipCard(membershipID, expiryDate);
+                    customerList.add(currentCustomer);
                     
-                    System.out.println("Redeemed " + pointsToUse + " points.");
-                    System.out.println(String.format("New Final Total: ₱%.2f", finalTotal));
+                    System.out.println("\n=== Account Created ===");
+                    System.out.println("User ID: " + userID);
+                    System.out.println("Password: " + password);
+                    System.out.println("Membership ID: " + membershipID);
+                    System.out.println("Valid until: " + expiryDate);
+                    System.out.println("An account has been created for you. You can sign in next time!");
+                    System.out.println("=======================\n");
+                    
+                } else if (memberChoice == 3) {
+                    // Guest has existing card - ask for membership ID
+                    String membershipID = ConsoleHelper.getStringInput("Enter your Membership Card ID (DLSUCS-XXXXXXXX): ");
+                    
+                    // Find customer with this membership ID
+                    Customer foundCustomer = null;
+                    for (Customer c : customerList) {
+                        if (c.getMembershipCardID() != null && c.getMembershipCardID().equals(membershipID)) {
+                            foundCustomer = c;
+                            break;
+                        }
+                    }
+                    
+                    if (foundCustomer != null) {
+                        currentCustomer = foundCustomer;
+                        System.out.println("Welcome back, " + currentCustomer.getName() + "!");
+                        System.out.println("Current points: " + currentCustomer.getPoints());
+                    } else {
+                        System.out.println("Membership card not found in system. Continuing as guest.");
+                    }
+                }
+            } else {
+                // Signed-in user without membership
+                boolean wantsMembership = ConsoleHelper.getYesNoInput("Purchase a membership card for ₱50.00? (y/n): ");
+                if (wantsMembership) {
+                    membershipFee = 50.0;
+                    String membershipID = generateMembershipID();
+                    LocalDate expiryDate = LocalDate.now().plusYears(1);
+                    currentCustomer.assignMembershipCard(membershipID, expiryDate);
+                    
+                    System.out.println("Membership card purchased!");
+                    System.out.println("Membership ID: " + membershipID);
+                    System.out.println("Valid until: " + expiryDate);
                 }
             }
         }
 
-        // 6. Handle Payment
+        // Step 3: Calculate Order Summary
+        double subtotal = 0.0;
+        for (CartItem item : shoppingCart) {
+            subtotal += item.getProduct().getPrice() * item.getQuantity();
+        }
+        
+        double vat = subtotal * 0.12;
+        double seniorDiscount = 0.0;
+        
+        if (isSenior) {
+            // Senior/PWD: subtract VAT first, then apply 20% discount
+            double amountAfterVAT = subtotal - vat;
+            seniorDiscount = amountAfterVAT * 0.20;
+        }
+        
+        double totalDue = subtotal - seniorDiscount + membershipFee;
+        
+        // Display Order Summary
+        System.out.println("\n========== ORDER SUMMARY ==========");
+        System.out.println("Subtotal:                ₱" + String.format("%.2f", subtotal));
+        System.out.println("VAT (12%):               ₱" + String.format("%.2f", vat));
+        if (isSenior) {
+            System.out.println("Senior/PWD Discount:    -₱" + String.format("%.2f", seniorDiscount));
+        }
+        if (membershipFee > 0) {
+            System.out.println("Membership Card:        +₱" + String.format("%.2f", membershipFee));
+        }
+        System.out.println("-----------------------------------");
+        System.out.println("TOTAL DUE:               ₱" + String.format("%.2f", totalDue));
+        System.out.println("===================================\n");
+        
+        // Show points information if member
+        if (currentCustomer.hasMembership()) {
+            int currentPoints = currentCustomer.getPoints();
+            int pointsToEarn = (int) ((subtotal - seniorDiscount) / 50);
+            System.out.println("Current Points: " + currentPoints);
+            System.out.println("Points to be earned: " + pointsToEarn + " (1 point per ₱50)");
+            
+            // Point redemption
+            if (currentPoints > 0) {
+                boolean usePoints = ConsoleHelper.getYesNoInput("Use points to pay? (1 point = ₱1)");
+                if (usePoints) {
+                    int maxPoints = (int) Math.min(currentPoints, totalDue);
+                    int pointsToUse = ConsoleHelper.getIntInput("Enter points to use (max " + maxPoints + "): ", 0, maxPoints);
+                    
+                    totalDue -= pointsToUse;
+                    currentCustomer.usePoints(pointsToUse);
+                    
+                    System.out.println("Redeemed " + pointsToUse + " points.");
+                    System.out.println(String.format("New Total Due: ₱%.2f", totalDue));
+                }
+            }
+            System.out.println();
+        }
+
+        // Step 4: Payment
+        System.out.println("\n=== PAYMENT ===");
+        System.out.println("Total to pay: ₱" + String.format("%.2f", totalDue));
         System.out.println("\nSelect Payment Method:");
         System.out.println("1. Cash");
         System.out.println("2. Card");
-        int methodChoice = ConsoleHelper.getIntInput("Enter choice: ", 1, 2);
-        String paymentMethod = (methodChoice == 1) ? "Cash" : "Card";
         
-        // Card validation
-        if (methodChoice == 2) {
-            boolean cardValid = validateCardPayment();
-            if (!cardValid) {
-                System.out.println("Card validation failed. Payment cancelled.");
-                System.out.println("Your cart has been saved. Please try checking out again.");
+        int paymentChoice = ConsoleHelper.getIntInput("Enter choice: ", 1, 2);
+        
+        String paymentMethod;
+        double amountPaid;
+        double change = 0.0;
+        String cardDetails = "";
+        
+        if (paymentChoice == 1) {
+            // Cash payment
+            paymentMethod = "Cash";
+            while (true) {
+                amountPaid = ConsoleHelper.getDoubleInput("Enter amount to pay: ₱");
+                
+                if (amountPaid < totalDue) {
+                    System.out.println("Insufficient payment! Total due: ₱" + String.format("%.2f", totalDue));
+                    continue;
+                }
+                
+                change = amountPaid - totalDue;
+                System.out.println("\nPayment received: ₱" + String.format("%.2f", amountPaid));
+                System.out.println("Change: ₱" + String.format("%.2f", change));
+                break;
+            }
+        } else {
+            // Card payment
+            paymentMethod = "Card";
+            cardDetails = handleCardPaymentConsole(totalDue);
+            if (cardDetails == null) {
+                System.out.println("Payment cancelled.");
                 return;
             }
+            amountPaid = totalDue;
         }
         
-        double paymentAmount = ConsoleHelper.getDoubleInput("Enter payment amount: ", finalTotal);
+        // Calculate points to earn
+        int pointsEarned = 0;
+        if (currentCustomer.hasMembership()) {
+            pointsEarned = (int) ((subtotal - seniorDiscount) / 50);
+            currentCustomer.earnPoints(pointsEarned);
+        }
         
-        double change = transaction.processPayment(paymentAmount, paymentMethod);
-
-        if (change >= 0) {
-            System.out.println("Payment successful.");
+        // Save customer data
+        dataHandler.saveCustomers(customerList);
+        
+        // Show receipt
+        printReceipt(paymentMethod, amountPaid, change, pointsEarned, cardDetails, subtotal, 
+                     seniorDiscount, membershipFee, totalDue);
+        
+        // Mark as complete
+        this.checkoutComplete = true;
+        this.isShopping = false;
+    }
+    
+    /**
+     * Handles card payment in console with validation.
+     * @param totalDue The total amount to charge
+     * @return Card details string, or null if cancelled
+     */
+    private String handleCardPaymentConsole(double totalDue) {
+        System.out.println("\n=== CARD PAYMENT ===");
+        
+        // Card number validation
+        String cardNumber;
+        while (true) {
+            cardNumber = ConsoleHelper.getStringInput("Enter card number (16 digits): ");
             
-            // Earn points
-            if (currentCustomer.hasMembership()) {
-                double amountForEarning = transaction.getAmountForPointsEarning();
-                currentCustomer.earnPoints(amountForEarning);
-                int earnedPoints = (int)(amountForEarning / 50);
-                System.out.println("Earned " + earnedPoints + " points. Total points: " + currentCustomer.getPoints());
+            if (!cardNumber.matches("\\d{16}")) {
+                System.out.println("Invalid card number! Must be 16 digits.");
+                continue;
             }
             
-            // Get receipt string
-            String receipt = transaction.getReceiptString();
+            // Check if Visa or Mastercard
+            if (!cardNumber.startsWith("4") && 
+                !(cardNumber.startsWith("51") || cardNumber.startsWith("52") || 
+                  cardNumber.startsWith("53") || cardNumber.startsWith("54") || 
+                  cardNumber.startsWith("55"))) {
+                System.out.println("Card not accepted! Only Visa or Mastercard.");
+                continue;
+            }
             
-            // 1. Save receipt to log
-            dataHandler.saveReceipt(receipt);
-            
-            // 2. Print receipt to console
-            System.out.println(receipt);
-            
-            this.checkoutComplete = true; // Mark as complete
-            
-        } else {
-            // This case should be prevented by getDoubleInput min value
-            System.out.println("Payment failed. Please try again.");
-            // We would loop here in a real app, but for MCO1 we'll just end.
-            // Since checkout is not complete, the 'finally' block will refund stock.
+            break;
         }
         
-        // After checkout (success or fail), stop shopping
-        this.isShopping = false;
+        // CVV validation
+        String cvv;
+        while (true) {
+            cvv = ConsoleHelper.getStringInput("Enter CVV (3 digits): ");
+            
+            if (!cvv.matches("\\d{3}")) {
+                System.out.println("Invalid CVV! Must be 3 digits.");
+                continue;
+            }
+            
+            break;
+        }
+        
+        // Expiry validation
+        String expiry;
+        while (true) {
+            expiry = ConsoleHelper.getStringInput("Enter expiry date (MM/YY): ");
+            
+            if (!expiry.matches("\\d{2}/\\d{2}")) {
+                System.out.println("Invalid format! Use MM/YY.");
+                continue;
+            }
+            
+            String[] parts = expiry.split("/");
+            int month = Integer.parseInt(parts[0]);
+            int year = 2000 + Integer.parseInt(parts[1]);
+            
+            if (month < 1 || month > 12) {
+                System.out.println("Invalid month! Must be 01-12.");
+                continue;
+            }
+            
+            // Check if expired
+            java.time.YearMonth cardExpiry = java.time.YearMonth.of(year, month);
+            java.time.YearMonth now = java.time.YearMonth.now();
+            if (cardExpiry.isBefore(now)) {
+                System.out.println("Card expired! Expiry date: " + expiry);
+                continue;
+            }
+            
+            break;
+        }
+        
+        // Show confirmation
+        String cardType = cardNumber.startsWith("4") ? "Visa" : "Mastercard";
+        String maskedCard = "**** **** **** " + cardNumber.substring(12);
+        
+        System.out.println("\n=== CONFIRM CARD PAYMENT ===");
+        System.out.println("Card Type: " + cardType);
+        System.out.println("Card Number: " + maskedCard);
+        System.out.println("Expiry: " + expiry);
+        System.out.println("Amount to charge: ₱" + String.format("%.2f", totalDue));
+        
+        boolean confirm = ConsoleHelper.getYesNoInput("\nProceed with payment? (y/n): ");
+        
+        if (!confirm) {
+            return null;
+        }
+        
+        System.out.println("\nPayment successful!");
+        return cardType + " " + maskedCard;
+    }
+    
+    /**
+     * Prints the receipt to console.
+     */
+    private void printReceipt(String paymentMethod, double amountPaid, double change,
+                             int pointsEarned, String cardDetails, double subtotal,
+                             double seniorDiscount, double membershipFee, double totalDue) {
+        System.out.println("\n╔════════════════════════════════════════╗");
+        System.out.println("║     DLSU CONVENIENCE STORE RECEIPT    ║");
+        System.out.println("╚════════════════════════════════════════╝");
+        System.out.println();
+        
+        // Date and time
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        java.time.format.DateTimeFormatter formatter = 
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        System.out.println("Date: " + now.format(formatter));
+        System.out.println("Customer: " + currentCustomer.getName());
+        if (currentCustomer.hasMembership()) {
+            System.out.println("Member ID: " + currentCustomer.getMembershipCardID());
+        }
+        System.out.println();
+        System.out.println("----------------------------------------");
+        System.out.println("ITEMS PURCHASED");
+        System.out.println("----------------------------------------");
+        
+        // Print cart items
+        for (CartItem item : shoppingCart) {
+            System.out.println(String.format("%-20s x%d  ₱%.2f", 
+                item.getProduct().getName(), 
+                item.getQuantity(),
+                item.getProduct().getPrice() * item.getQuantity()));
+        }
+        
+        System.out.println("----------------------------------------");
+        System.out.println(String.format("Subtotal:                ₱%.2f", subtotal));
+        System.out.println(String.format("VAT (12%%):               ₱%.2f", subtotal * 0.12));
+        
+        if (seniorDiscount > 0) {
+            System.out.println(String.format("Senior/PWD Discount:    -₱%.2f", seniorDiscount));
+        }
+        
+        if (membershipFee > 0) {
+            System.out.println(String.format("Membership Card:        +₱%.2f", membershipFee));
+        }
+        
+        System.out.println("----------------------------------------");
+        System.out.println(String.format("TOTAL DUE:               ₱%.2f", totalDue));
+        System.out.println("----------------------------------------");
+        System.out.println();
+        
+        System.out.println("PAYMENT DETAILS");
+        System.out.println("Payment Method: " + paymentMethod);
+        
+        if ("Cash".equals(paymentMethod)) {
+            System.out.println(String.format("Amount Paid:             ₱%.2f", amountPaid));
+            System.out.println(String.format("Change:                  ₱%.2f", change));
+        } else {
+            System.out.println("Card: " + cardDetails);
+            System.out.println(String.format("Amount Charged:          ₱%.2f", amountPaid));
+        }
+        
+        if (currentCustomer.hasMembership()) {
+            System.out.println();
+            System.out.println("----------------------------------------");
+            System.out.println("MEMBERSHIP POINTS");
+            System.out.println("----------------------------------------");
+            System.out.println(String.format("Points Earned: +%d", pointsEarned));
+            System.out.println(String.format("Total Points: %d", currentCustomer.getPoints()));
+        }
+        
+        System.out.println();
+        System.out.println("========================================");
+        System.out.println("   Thank you for shopping with us!");
+        System.out.println("       Please come again soon!");
+        System.out.println("========================================");
+        System.out.println();
     }
 
     /**
@@ -532,19 +793,25 @@ public class CustomerController {
     }
 
     /**
-     * Handles membership card purchase during checkout.
-     * @param currentTotal (double) The current total before membership fee.
-     * @return (double) The new total including membership fee.
+     * Generates a new user ID in the format DLSUser-XXX.
+     * @return (String) The generated user ID.
      */
-    private double handleMembershipPurchase(double currentTotal) {
-        String membershipID = generateMembershipID();
-        LocalDate expiryDate = LocalDate.now().plusYears(1);
-        currentCustomer.assignMembershipCard(membershipID, expiryDate);
-        System.out.println("Membership card purchased!");
-        System.out.println("Membership ID: " + membershipID);
-        System.out.println("Valid until: " + expiryDate);
-        System.out.println("Membership fee (₱50.00) added to total.");
-        return currentTotal + 50.0;
+    private String generateUserID() {
+        int maxNumber = 0;
+        for (Customer customer : customerList) {
+            String id = customer.getUserID();
+            if (id.startsWith("DLSUser-")) {
+                try {
+                    int number = Integer.parseInt(id.substring(8));
+                    if (number > maxNumber) {
+                        maxNumber = number;
+                    }
+                } catch (NumberFormatException e) {
+                    // Skip invalid IDs
+                }
+            }
+        }
+        return String.format("DLSUser-%03d", maxNumber + 1);
     }
 
     /**

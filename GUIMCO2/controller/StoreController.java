@@ -1,8 +1,8 @@
 package controller;
 
+import java.util.List;
 import model.*;
 import util.*;
-import java.util.List;
 
 /**
  * The main application class. Loads data, manages the main menu,
@@ -77,59 +77,144 @@ public class StoreController {
     }
 
     /**
-     * Handles the "Guest Checkout" flow for a customer.
+     * Handles the customer authentication and shopping flow.
      */
     private void handleCustomerShopping() {
         System.out.println("\n--- Welcome, Customer! ---");
-
-        // 1. Create a "Guest" customer by default
-        Customer currentCustomer = new Customer("GUEST-001", "Guest");
-
-        // 2. Ask for Senior/PWD status
-        boolean isSenior = ConsoleHelper.getYesNoInput("Are you a Senior Citizen or PWD? (y/n): ");
-        currentCustomer.setIsSenior(isSenior);
-
-        // 3. Optional: Log in as a member
-        boolean wantsToLogin = ConsoleHelper.getYesNoInput("Do you have a membership card? (y/n): ");
-        if (wantsToLogin) {
-            Customer member = handleMemberLogin();
-            if (member != null) {
-                // If login is successful, use the member's profile
-                // We must transfer the senior status set earlier
-                member.setIsSenior(isSenior);
-                currentCustomer = member; 
-            }
+        System.out.println("1. Sign In");
+        System.out.println("2. Sign Up");
+        System.out.println("3. Continue as Guest");
+        System.out.println("0. Back to Main Menu");
+        
+        int choice = ConsoleHelper.getIntInput("Enter your choice: ", 0, 3);
+        
+        Customer currentCustomer = null;
+        
+        switch (choice) {
+            case 1:
+                currentCustomer = handleSignIn();
+                break;
+            case 2:
+                currentCustomer = handleSignUp();
+                break;
+            case 3:
+                currentCustomer = createGuestCustomer();
+                System.out.println("Continuing as guest.");
+                break;
+            case 0:
+                return;
         }
-
-        // 4. Start the customer controller
-        CustomerController customerApp = new CustomerController(inventory, currentCustomer, dataHandler);
-        customerApp.run();
+        
+        if (currentCustomer != null) {
+            // Start the customer controller
+            CustomerController customerApp = new CustomerController(inventory, currentCustomer, dataHandler, customerList);
+            customerApp.run();
+            
+            // Save customer data after shopping (points may have changed)
+            dataHandler.saveCustomers(customerList);
+        }
     }
 
     /**
-     * Handles the specific process of logging in a member.
-     * @return (Customer) The found customer, or null if not found/aborted.
+     * Handles the sign in process.
+     * @return (Customer) The authenticated customer, or null if authentication failed.
      */
-    private Customer handleMemberLogin() {
-        String id = ConsoleHelper.getStringInput("Enter your Customer ID: ");
-        Customer foundCustomer = null;
-        boolean found = false;
-        int i = 0;
+    private Customer handleSignIn() {
+        System.out.println("\n--- Sign In ---");
+        String userID = ConsoleHelper.getStringInput("Enter User ID: ");
         
-        while (i < customerList.size() && !found) {
-            if (customerList.get(i).getCustomerID().equalsIgnoreCase(id)) {
-                foundCustomer = customerList.get(i);
-                found = true;
+        Customer foundCustomer = null;
+        for (Customer customer : customerList) {
+            if (customer.getUserID().equals(userID)) {
+                foundCustomer = customer;
+                break;
             }
-            i++;
         }
-
-        if (foundCustomer != null) {
+        
+        if (foundCustomer == null) {
+            System.out.println("User ID not found.");
+            return null;
+        }
+        
+        String password = ConsoleHelper.getStringInput("Enter Password: ");
+        
+        if (foundCustomer.getPassword().equals(password)) {
             System.out.println("Welcome back, " + foundCustomer.getName() + "!");
+            return foundCustomer;
         } else {
-            System.out.println("Customer ID not found. Proceeding as Guest.");
+            System.out.println("Incorrect password.");
+            return null;
         }
-        return foundCustomer;
+    }
+
+    /**
+     * Handles the sign up process for new users.
+     * @return (Customer) The newly created customer, or null if sign up was cancelled.
+     */
+    private Customer handleSignUp() {
+        System.out.println("\n--- Sign Up ---");
+        
+        String lastName = ConsoleHelper.getStringInput("Enter Last Name: ");
+        String firstName = ConsoleHelper.getStringInput("Enter First Name: ");
+        String middleName = ConsoleHelper.getStringInput("Enter Middle Name: ");
+        
+        String password;
+        while (true) {
+            password = ConsoleHelper.getStringInput("Enter Password (min 8 characters): ");
+            if (password.length() >= 8) {
+                break;
+            }
+            System.out.println("Password must be at least 8 characters long.");
+        }
+        
+        String confirmPassword = ConsoleHelper.getStringInput("Confirm Password: ");
+        
+        if (!password.equals(confirmPassword)) {
+            System.out.println("Passwords do not match. Sign up cancelled.");
+            return null;
+        }
+        
+        // Generate user ID
+        String userID = generateUserID();
+        
+        Customer newCustomer = new Customer(userID, lastName, firstName, middleName, password);
+        customerList.add(newCustomer);
+        
+        System.out.println("Account created successfully!");
+        System.out.println("Your User ID: " + userID);
+        System.out.println("Welcome, " + newCustomer.getName() + "!");
+        
+        return newCustomer;
+    }
+
+    /**
+     * Creates a guest customer.
+     * @return (Customer) A guest customer instance.
+     */
+    private Customer createGuestCustomer() {
+        return new Customer("GUEST-" + System.currentTimeMillis(), "Guest");
+    }
+
+    /**
+     * Generates a new user ID in the format DLSUser-XXX.
+     * @return (String) The generated user ID.
+     */
+    private String generateUserID() {
+        int maxNumber = 0;
+        for (Customer customer : customerList) {
+            String id = customer.getUserID();
+            if (id.startsWith("DLSUser-")) {
+                try {
+                    int number = Integer.parseInt(id.substring(8));
+                    if (number > maxNumber) {
+                        maxNumber = number;
+                    }
+                } catch (NumberFormatException e) {
+                    // Skip invalid IDs
+                }
+            }
+        }
+        return String.format("DLSUser-%03d", maxNumber + 1);
     }
 
     /**
