@@ -201,7 +201,7 @@ public class CustomerGUI extends JPanel {
             searchLabel.setFont(new Font("Arial", Font.PLAIN, 14));
             searchPanel.add(searchLabel);
             
-            searchField = new JTextField(25);
+            searchField = new JTextField(20);
             searchField.setFont(new Font("Arial", Font.PLAIN, 14));
             searchField.addActionListener(e -> searchProducts()); // Allow Enter key
             searchPanel.add(searchField);
@@ -427,62 +427,109 @@ public class CustomerGUI extends JPanel {
             BorderFactory.createEmptyBorder(10, 10, 10, 10)
         ));
         card.setBackground(Color.WHITE);
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
         
-        // Build tooltip with brand, variant, and expiry date
-        StringBuilder tooltip = new StringBuilder("<html>");
-        tooltip.append("<b>").append(product.getName()).append("</b><br>");
-        tooltip.append("Brand: ").append(product.getBrand()).append("<br>");
-        tooltip.append("Variant: ").append(product.getVariant()).append("<br>");
-        if (product instanceof PerishableProduct) {
-            PerishableProduct perishable = (PerishableProduct) product;
-            tooltip.append("Expiry: ").append(perishable.getExpirationDate()).append("<br>");
-        }
-        tooltip.append("</html>");
-        card.setToolTipText(tooltip.toString());
-        
-        // Product info
-        JPanel infoPanel = new JPanel(new GridLayout(3, 1));
+        // Product info - brand, variant, expiry (if perishable), then stock at bottom
+        JPanel infoPanel = new JPanel();
+        infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
         infoPanel.setBackground(Color.WHITE);
-        infoPanel.setToolTipText(tooltip.toString());
         
         JLabel nameLabel = new JLabel(product.getName());
         nameLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        nameLabel.setToolTipText(tooltip.toString());
+        nameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         infoPanel.add(nameLabel);
         
         JLabel priceLabel = new JLabel("₱" + String.format("%.2f", product.getPrice()));
         priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
-        priceLabel.setToolTipText(tooltip.toString());
+        priceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         infoPanel.add(priceLabel);
         
+        // Brand
+        String brand = product.getBrand();
+        JLabel brandLabel = new JLabel("Brand: " + (brand != null && !brand.isEmpty() ? brand : "N/A"));
+        brandLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+        brandLabel.setForeground(new Color(100, 100, 100));
+        brandLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        infoPanel.add(brandLabel);
+        
+        // Variant
+        String variant = product.getVariant();
+        JLabel variantLabel = new JLabel("Variant: " + (variant != null && !variant.isEmpty() ? variant : "N/A"));
+        variantLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+        variantLabel.setForeground(new Color(100, 100, 100));
+        variantLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        infoPanel.add(variantLabel);
+        
+        // Expiry - only show for perishable products
+        if (product instanceof PerishableProduct) {
+            PerishableProduct perishable = (PerishableProduct) product;
+            JLabel expiryLabel = new JLabel("Expiry: " + perishable.getExpirationDate().toString());
+            expiryLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+            expiryLabel.setForeground(new Color(100, 100, 100));
+            expiryLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            infoPanel.add(expiryLabel);
+        }
+        
+        // Stock at the bottom
         JLabel stockLabel = new JLabel("Stock: " + product.getQuantityInStock());
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(Color.GRAY);
-        stockLabel.setToolTipText(tooltip.toString());
+        stockLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         infoPanel.add(stockLabel);
         
         card.add(infoPanel, BorderLayout.CENTER);
         
         // Add to cart button
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
         buttonPanel.setBackground(Color.WHITE);
         
+        // Quantity spinner
         JSpinner quantitySpinner = new JSpinner(
             new SpinnerNumberModel(1, 1, product.getQuantityInStock(), 1)
         );
         quantitySpinner.setPreferredSize(new Dimension(60, 25));
         buttonPanel.add(quantitySpinner);
         
+        // Add button
         JButton addButton = new JButton("Add");
         addButton.setBackground(new Color(34, 139, 34));
         addButton.setForeground(Color.WHITE);
+        addButton.setFocusPainted(false);
         addButton.addActionListener(e -> addToCart(product, (Integer) quantitySpinner.getValue()));
         buttonPanel.add(addButton);
         
         card.add(buttonPanel, BorderLayout.EAST);
         
         return card;
+    }
+    
+    /**
+     * Shows detailed product information in a dialog.
+     */
+    private void showProductDetails(Product product) {
+        StringBuilder details = new StringBuilder();
+        details.append("Product Name: ").append(product.getName()).append("\n");
+        details.append("Product ID: ").append(product.getProductID()).append("\n");
+        details.append("Price: ₱").append(String.format("%.2f", product.getPrice())).append("\n");
+        details.append("Stock: ").append(product.getQuantityInStock()).append("\n\n");
+        
+        String brand = product.getBrand();
+        String variant = product.getVariant();
+        
+        details.append("Brand: ").append(brand != null && !brand.isEmpty() ? brand : "N/A").append("\n");
+        details.append("Variant: ").append(variant != null && !variant.isEmpty() ? variant : "N/A").append("\n");
+        
+        if (product instanceof PerishableProduct) {
+            PerishableProduct perishable = (PerishableProduct) product;
+            details.append("Expiry Date: ").append(perishable.getExpirationDate()).append("\n");
+        } else {
+            details.append("Expiry Date: N/A (Non-perishable)\n");
+        }
+        
+        JOptionPane.showMessageDialog(this,
+            details.toString(),
+            "Product Details",
+            JOptionPane.INFORMATION_MESSAGE);
     }
     
     /**
